@@ -1662,6 +1662,9 @@ func (g *Game) update(dt float32) {
 		if usePressed() && !p.Mounted {
 			g.placeBoat()
 		}
+	case ItemBucket:
+		p.Mining = false
+		g.useBucket()
 	case ItemFlag:
 		p.Mining = false
 		p.Aim = g.World.RayCastAny(p.Eye(), p.Forward(), reachDist)
@@ -2141,7 +2144,7 @@ func (g *Game) bringNear(ref rl.Vector3) func() {
 // drawHeldBlock renders the selected block as a real cube in the player's hand.
 func (g *Game) drawHeldBlock(cam rl.Camera3D) {
 	p := g.Player
-	if g.ThirdPerson || (p.Held.Kind != ItemBlock && p.Held.Kind != ItemFood) {
+	if g.ThirdPerson || (p.Held.Kind != ItemBlock && p.Held.Kind != ItemFood && p.Held.Kind != ItemBucket) {
 		return
 	}
 	fwd := p.Forward()
@@ -2390,7 +2393,7 @@ func (g *Game) drawWeapon() {
 	skin := rl.NewColor(200, 160, 120, 255)
 	swing := float32(math.Sin(float64(p.Swing * math.Pi)))
 	switch p.Held.Kind {
-	case ItemBlock, ItemFood:
+	case ItemBlock, ItemFood, ItemBucket:
 		// The block itself is drawn in 3D (drawHeldBlock); only the arm is 2D.
 		rx := sw*0.68 + bobX - swing*12
 		ry := sh - 170 + bobY + swing*40
@@ -2487,7 +2490,7 @@ func (g *Game) drawHotbar(sw, sh int32) {
 				drawSwordIcon(cx, cy, slot*0.9, p.SwordTier)
 			case ItemPickaxe:
 				drawPickIcon(cx, cy, slot*0.9, p.PickTier)
-			case ItemBlock, ItemFood, ItemBow, ItemRod, ItemBoat, ItemFlag:
+			case ItemBlock, ItemFood, ItemBow, ItemRod, ItemBoat, ItemFlag, ItemBucket:
 				g.drawBlockIcon(it.Block, x+9, y0+9, slot-18)
 				if it.Kind == ItemBow {
 					cnt := fmt.Sprintf("%d", p.Inv[ArrowItem])
@@ -2531,6 +2534,12 @@ func (g *Game) drawHotbar(sw, sh int32) {
 		name = "Boat  (right click at water to launch)"
 	case ItemFlag:
 		name = "Village Flag  (right click on open ground to found your village)"
+	case ItemBucket:
+		if p.Held.Block == Bucket {
+			name = "Bucket  (right click at water to fill)"
+		} else {
+			name = "Water Bucket  (right click to pour)"
+		}
 	}
 	if len(hb) > hotbarSlots {
 		name += "   (wheel scrolls)"
@@ -2872,11 +2881,12 @@ func (g *Game) drawHelp(sw, sh int32) {
 		"Goal: find the ancient beacon tower (see the compass) and light it with 3 diamond ore.",
 		"Wolves: feed one meat or fish twice to tame it. Cats: a fish tames one; right click to sit or follow. Fishing rod: planks and wool.",
 		"Horses (plains): feed wheat, bread or apples twice, then right click to ride; SPACE jumps, CTRL gallops, SHIFT dismounts. Boat: 5 planks.",
+		"Fences (3 planks): a block and a half tall, nothing jumps them. Bucket (3 iron, coal): right click water to scoop it, right click again to pour; water quenches lava to cobblestone.",
 		"Outback: red sand, eucalyptus, kangaroos, emus, wombats. Koalas and platypuses are protected. Mind the crocodiles.",
 		"The deep: below the dark stone lie vast caverns, lakes, ravines, glowshrooms, amethyst, diamonds and cave spiders.",
 		"Modes (O on the menu, G in pause): Survival, Creative, Zombie (endless night, growing hordes), Battle (factions at war with you).",
 		"War: Redfort and Bluehaven send warbands to capture flags. Stand by a flag 8s to capture it. Craft a Village Flag to found your own.",
-		"Two dragons roost on the highest peak and the snowy taiga. Keep your distance, or bring arrows: 150 health, diamonds when slain.",
+		"Four dragons: fire on the highest peak, frost over the taiga, earth on the desert mesa (boulders, ground-heaving slams), water out at sea (jets that sweep you away). Bring arrows; each leaves a hoard.",
 		"Dinosaurs: brontosaur herds browse the swamp willows, raptor packs and compys roam the outback, the tyrannosaur hunts alone.",
 		"Asteroids fall now and then: heed the warning and its bearing; the target and past craters show on the map (M). Mine the meteorite. Earthquakes heave and drop the ground along a fault line; mind the fissure. Trees regrow leaves; pick apples off red-dotted leaves.",
 		"F9 records a video of your game (MP4 with ffmpeg installed, otherwise a 30 s GIF) into the recordings folder beside your save.",

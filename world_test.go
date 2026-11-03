@@ -1376,13 +1376,26 @@ func TestChests(t *testing.T) {
 	}
 }
 
-// Two dragons roost far from spawn, wake when approached, breathe fire, and fall when killed.
+// Four dragons roost far from spawn, wake when approached, breathe fire, and fall when killed.
 func TestDragons(t *testing.T) {
 	rand.Seed(31)
 	g := &Game{Audio: &Audio{}, CraftHover: -1}
 	g.Reset()
-	if len(g.Dragons) != 2 || g.Dragons[0].Frost || !g.Dragons[1].Frost {
-		t.Fatalf("expected a fire and a frost dragon: %+v", g.Dragons)
+	if len(g.Dragons) != 4 {
+		t.Fatalf("expected four dragons: %+v", g.Dragons)
+	}
+	for i, k := range []DragonKind{DragonFire, DragonFrost, DragonEarth, DragonWater} {
+		if g.Dragons[i].Kind != k {
+			t.Fatalf("dragon %d should be kind %d, got %d", i, k, g.Dragons[i].Kind)
+		}
+		for j := 0; j < i; j++ {
+			if WrapDist(g.Dragons[i].Roost, g.Dragons[j].Roost) < 40 {
+				t.Fatalf("dragons %d and %d roost too close", i, j)
+			}
+		}
+	}
+	if wd := g.Dragons[3]; !g.World.IsWater(floorI(wd.Roost.X), seaLevel-1, floorI(wd.Roost.Z)) {
+		t.Fatal("the water dragon should roost over the sea")
 	}
 	d := g.Dragons[0]
 	if WrapDist(d.Roost, g.Spawn) < 50 {
@@ -1488,5 +1501,72 @@ func TestEarthquake(t *testing.T) {
 	}
 	if !g.Got[AchQuake] {
 		t.Fatal("surviving a quake should unlock the achievement")
+	}
+}
+
+// Buckets scoop and pour water; seas refill, poured water falls, lava is quenched.
+func TestBuckets(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	// A one-cell pond drains; a wide pool refills.
+	x, z := floorI(g.Spawn.X)+3, floorI(g.Spawn.Z)+3
+	y := w.SurfaceY(x, z) + 3
+	for i := 0; i < 3; i++ {
+		w.Set(x+i, y, z, Air)
+	}
+	w.Set(x, y, z, Water)
+	g.applyBucket(x, y, z, Air)
+	if w.Get(x, y, z) != Air {
+		t.Fatal("a lone water cell should be scooped up")
+	}
+	for dx := -1; dx <= 1; dx++ {
+		for dz := -1; dz <= 1; dz++ {
+			w.Set(x+dx, y, z+dz, Water)
+		}
+	}
+	g.applyBucket(x, y, z, Air)
+	if w.Get(x, y, z) != Water {
+		t.Fatal("a pool refills when a bucket is dipped in it")
+	}
+	// Pouring over a drop fills the column down to the ground.
+	px, pz := x+6, z+6
+	ground := w.SurfaceY(px, pz)
+	for yy := ground; yy < ground+6; yy++ {
+		w.Set(px, yy, pz, Air)
+	}
+	g.applyBucket(px, ground+5, pz, Water)
+	for yy := ground; yy <= ground+5; yy++ {
+		if w.Get(px, yy, pz) != Water {
+			t.Fatalf("poured water should fall to the ground: y %d is %v", yy, blocks[w.Get(px, yy, pz)].Name)
+		}
+	}
+	// Water on lava makes cobblestone.
+	w.Set(px, ground+7, pz, Lava)
+	g.applyBucket(px, ground+7, pz, Water)
+	if w.Get(px, ground+7, pz) != Cobble {
+		t.Fatal("water should quench lava to cobblestone")
+	}
+}
+
+// A fence blocks the cell above it, joins its neighbours, and is not a path for mobs.
+func TestFence(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	x, z := floorI(g.Spawn.X)+4, floorI(g.Spawn.Z)
+	y := w.SurfaceY(x, z)
+	w.Set(x, y, z, Fence)
+	w.Set(x+1, y, z, Fence)
+	if !w.Solid(x, y, z) || !w.Solid(x, y+1, z) || w.Solid(x, y+2, z) {
+		t.Fatal("a fence should be solid for a block and a half")
+	}
+	if n := len(w.fenceBoxes(x-originX, y, z-originZ)); n != 3 {
+		t.Fatalf("a fence beside one fence should have a post and two rails, got %d boxes", n)
+	}
+	if hit := w.RayCastLiquid(rl.NewVector3(float32(x)+0.5, float32(y)+3, float32(z)+0.5), rl.NewVector3(0, -1, 0), 10); !hit.Hit || hit.Y != y {
+		t.Fatalf("ray should stop at the fence: %+v", hit)
 	}
 }

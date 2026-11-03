@@ -60,10 +60,14 @@ block textures and sound effects are generated at startup.
   Stone needs a pickaxe tier; iron ore needs stone, gold and diamond ore need iron.
 - **Crafting (E)**: logs to planks, torches, TNT, ladders, beds, cobblestone to stone bricks, sand to glass, ore to rifle ammo,
   and stone/iron/diamond swords and pickaxes. Better pickaxes mine faster; better swords hit harder.
-- **Two dragons** rule the skies: a fire dragon circling the highest peak and a frost dragon over the
-  snowy taiga. Come within forty blocks of a roost, or hurt one, and it hunts you: fireballs that scorch
-  the ground (frost ones chill and slow you), dives that bite for heavy damage. They have 150 health;
-  the sword does double damage and arrows too. A slain dragon crashes down and leaves diamonds, gold and
+- **Four dragons** rule the skies: a fire dragon circling the highest peak, a frost dragon over the
+  snowy taiga, an earth dragon on the tallest desert mesa and a water dragon out over the open sea.
+  Come within forty blocks of a roost, or hurt one, and it hunts you. Fire and frost breathe fireballs
+  that scorch the ground (frost ones chill and slow you) and dive to bite. The earth dragon lobs
+  boulders and lands on you with a slam that heaves the ground up in a ring, like a small earthquake.
+  The water dragon skims low, dives under the waves and blasts jets of water that sweep you off your
+  feet. They have 150 to 220 health; the sword does double damage and arrows too. A slain dragon
+  crashes down and leaves its hoard (diamonds and gold, amethyst and iron, or diamonds and fish) plus
   ammo, and the compass panel warns when one is near.
 - **Dinosaurs** of several sizes. A tyrannosaur roams every world: three blocks tall, it thuds and
   roars, ignores you until hurt, then charges and bites. Brontosaur herds live in the **swamps**, a new
@@ -80,6 +84,13 @@ block textures and sound effects are generated at startup.
   Shift dismounts.
 - **Boats**: five planks. Hold the boat and right click at water to launch it, right click the boat to
   board, and steer with WASD; it is quick on water and crawls on land. Break it to pick it back up.
+- **Fences**: three planks make four. A fence post joins up with its neighbours and with walls, and
+  stands a block and a half tall, so neither you nor the animals and undead can jump it. Pen your
+  horses and keep the zombies off the porch.
+- **Buckets**: three iron ore and coal. Right click water with an empty bucket to scoop it up (seas and
+  pools refill; a lone puddle drains), then right click anywhere to pour. Poured water falls until it
+  finds the ground, so you can fill a moat, a pond or a well. Pour it on lava and the lava sets to
+  cobblestone.
 - **Cats**: ginger, black and tabby strays live around villages and in forests and shy away from you
   unless you hold a fish. Give one a fish and it is your pet: it follows you, teleports to keep up, and
   creepers will not go near it. Right click it to make it sit and wait, or follow again; a fish heals it.

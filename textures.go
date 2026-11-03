@@ -68,6 +68,9 @@ const (
 	PatFruit
 	PatBoat
 	PatFlag
+	PatFence
+	PatBucket
+	PatWaterBucket
 )
 
 const (
@@ -615,6 +618,8 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 			return mul(blocks[Torch].Top, 0.85+0.3*n)
 		}
 		return mul(base, 0.8+0.3*n)
+	case PatFence, PatBucket, PatWaterBucket:
+		return texelPixel(p, base, info, x, y, seed)
 	default:
 		return paint(base, fx, fy, seed, 0.3, false)
 	}
@@ -965,6 +970,33 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 			return mul(rl.NewColor(255, 150, 60, 255), 0.8+0.4*n) // glowing veins
 		}
 		return mul(base, 0.6+0.6*n)
+	case PatFence:
+		// Vertical grain, darker at the rail heights.
+		v := 0.8 + 0.3*hash2(x/2, y, seed)
+		if y == 2 || y == 9 {
+			v *= 0.7
+		}
+		return mul(base, v)
+	case PatBucket, PatWaterBucket:
+		// A pail: tapered metal sides, a handle arc above, water showing at the rim when full.
+		if y >= 5 && y <= 14 {
+			half := 6 - (y-5)/4 // narrower toward the bottom
+			if abs(x-7) < half {
+				if p == PatWaterBucket && y <= 6 && abs(x-7) < half-1 {
+					return mul(rl.NewColor(50, 110, 220, 255), 0.85+0.3*n)
+				}
+				v := 0.75 + 0.35*n
+				if y == 5 || y == 14 || abs(x-7) >= half-1 {
+					v *= 0.7 // rim and edges
+				}
+				return mul(base, v)
+			}
+			return rl.NewColor(0, 0, 0, 0)
+		}
+		if y < 5 && (x == 2 || x == 12 || (y == 1 && x > 2 && x < 12)) {
+			return mul(base, 0.6) // handle
+		}
+		return rl.NewColor(0, 0, 0, 0)
 	case PatFruit:
 		if hash2(x, y, seed+9) < 0.16 {
 			return rl.NewColor(0, 0, 0, 0)

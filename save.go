@@ -195,6 +195,7 @@ func (g *Game) load() bool {
 	g.Faults = d.Faults
 	if d.Dragons != nil {
 		g.Dragons = d.Dragons
+		g.upgradeDragons()
 	}
 	pl.Hunger = d.Hunger
 	pl.EnsureHeld()

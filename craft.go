@@ -40,6 +40,8 @@ var recipes = []Recipe{
 	{Name: "Arrows x4", Out: ArrowItem, Count: 4, In: []Ingredient{{Planks, 1}, {Gravel, 1}}},
 	{Name: "TNT", Out: TNT, Count: 1, In: []Ingredient{{Sand, 4}, {CoalOre, 4}}},
 	{Name: "Ladder x4", Out: Ladder, Count: 4, In: []Ingredient{{Planks, 2}}},
+	{Name: "Fence x4", Out: Fence, Count: 4, In: []Ingredient{{Planks, 3}}},
+	{Name: "Bucket", Out: Bucket, Count: 1, In: []Ingredient{{IronOre, 3}, {CoalOre, 1}}},
 	{Name: "Bed", Out: Bed, Count: 1, In: []Ingredient{{Planks, 3}, {Wool, 3}}},
 	{Name: "Stone Bricks x4", Out: StoneBrick, Count: 4, In: []Ingredient{{Cobble, 4}}},
 	{Name: "Glass x4", Out: Glass, Count: 4, In: []Ingredient{{Sand, 4}, {CoalOre, 1}}},

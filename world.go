@@ -109,6 +109,9 @@ const (
 	Spawner
 	Crate
 	Bedrock
+	Fence
+	Bucket
+	WaterBucket
 	numBlocks
 )
 
@@ -152,7 +155,31 @@ var (
 	flagBox       = [2][3]float32{{0.44, 0, 0.44}, {0.56, 3, 0.56}}
 	doorClosedBox = [2][3]float32{{0, 0, 0.4}, {1, 1, 0.6}}
 	doorOpenBox   = [2][3]float32{{0, 0, 0}, {0.2, 1, 1}}
+	fencePostBox  = [2][3]float32{{0.375, 0, 0.375}, {0.625, 1.5, 0.625}}
 )
+
+// fenceBoxes is the post plus a pair of rails toward every neighbour a fence
+// joins: another fence or a full block.
+func (w *World) fenceBoxes(lx, y, lz int) [][2][3]float32 {
+	out := [][2][3]float32{fencePostBox}
+	join := func(b Block) bool { return b == Fence || (b.Opaque() && blocks[b].Solid) }
+	const hw = 0.0625
+	for _, rail := range [][2]float32{{0.45, 0.6}, {1.05, 1.2}} {
+		if join(w.getLocal(lx, y, lz-1)) {
+			out = append(out, [2][3]float32{{0.5 - hw, rail[0], 0}, {0.5 + hw, rail[1], 0.375}})
+		}
+		if join(w.getLocal(lx, y, lz+1)) {
+			out = append(out, [2][3]float32{{0.5 - hw, rail[0], 0.625}, {0.5 + hw, rail[1], 1}})
+		}
+		if join(w.getLocal(lx-1, y, lz)) {
+			out = append(out, [2][3]float32{{0, rail[0], 0.5 - hw}, {0.375, rail[1], 0.5 + hw}})
+		}
+		if join(w.getLocal(lx+1, y, lz)) {
+			out = append(out, [2][3]float32{{0.625, rail[0], 0.5 - hw}, {1, rail[1], 0.5 + hw}})
+		}
+	}
+	return out
+}
 
 // Biomes decide the surface blocks and vegetation of a column.
 type Biome uint8
@@ -323,6 +350,12 @@ var blocks = [numBlocks]blockInfo{
 		Pat: [3]texPattern{PatCrate, PatCrate, PatCrate}, MineTime: 0.8, Drops: Air, Solid: true},
 	Bedrock: {Name: "Bedrock", Top: col(70, 70, 76), Side: col(70, 70, 76), Bottom: col(70, 70, 76),
 		Pat: [3]texPattern{PatBedrock, PatBedrock, PatBedrock}, MineTime: -1, Drops: Bedrock, Solid: true},
+	Fence: {Name: "Fence", Top: col(172, 140, 86), Side: col(160, 124, 72), Bottom: col(150, 115, 65),
+		Pat: [3]texPattern{PatLogTop, PatFence, PatLogTop}, MineTime: 1.0, Drops: Fence, Solid: true, Tiny: true, Box: &fencePostBox},
+	Bucket: {Name: "Bucket", Top: col(160, 164, 170), Side: col(160, 164, 170), Bottom: col(160, 164, 170),
+		Pat: [3]texPattern{PatBucket, PatBucket, PatBucket}, MineTime: 0.1, Drops: Bucket, Item: true},
+	WaterBucket: {Name: "Water Bucket", Top: col(160, 164, 170), Side: col(160, 164, 170), Bottom: col(160, 164, 170),
+		Pat: [3]texPattern{PatWaterBucket, PatWaterBucket, PatWaterBucket}, MineTime: 0.1, Drops: WaterBucket, Item: true},
 }
 
 // Opaque reports whether a block hides the faces of its neighbours.
@@ -1582,7 +1615,12 @@ func (w *World) Solid(x, y, z int) bool {
 	if y >= worldH {
 		return false
 	}
-	return blocks[w.Blocks[(y*worldD+wrapZ(z-originZ))*worldW+wrapX(x-originX)]].Solid
+	i := (y*worldD+wrapZ(z-originZ))*worldW + wrapX(x-originX)
+	if blocks[w.Blocks[i]].Solid {
+		return true
+	}
+	// A fence is a block and a half tall: nothing walks or jumps through the cell above it.
+	return y > 0 && w.Blocks[i-worldD*worldW] == Fence
 }
 
 // IsWater reports whether a world cell holds water.
@@ -1918,10 +1956,16 @@ func (w *World) buildChunk(ci, cj int, c *chunk) {
 						c.opaque[y/sectionH].emitCross(b, wx, float32(y), wz, box[1][1], l, biomeTintCode(b, &faces[0], w.Biome[lz*worldW+lx]))
 						continue
 					}
-					for fi := range faces {
-						c.opaque[y/sectionH].emitFace(&faces[fi], b, wx, float32(y), wz, box, 1, [4]int{3, 3, 3, 3}, [4]cornerLight{l, l, l, l})
-						if code := biomeTintCode(b, &faces[fi], w.Biome[lz*worldW+lx]); code != 255 {
-							c.opaque[y/sectionH].setLastFaceAlpha(code)
+					boxes := [][2][3]float32{box}
+					if b == Fence {
+						boxes = w.fenceBoxes(lx, y, lz)
+					}
+					for _, box := range boxes {
+						for fi := range faces {
+							c.opaque[y/sectionH].emitFace(&faces[fi], b, wx, float32(y), wz, box, 1, [4]int{3, 3, 3, 3}, [4]cornerLight{l, l, l, l})
+							if code := biomeTintCode(b, &faces[fi], w.Biome[lz*worldW+lx]); code != 255 {
+								c.opaque[y/sectionH].setLastFaceAlpha(code)
+							}
 						}
 					}
 					continue
@@ -2557,13 +2601,25 @@ type RayHit struct {
 
 // RayCast walks the voxel grid (Amanatides & Woo) up to maxD units, stopping at solid blocks.
 func (w *World) RayCast(o, d rl.Vector3, maxD float32) RayHit {
-	return w.rayCast(o, d, maxD, w.Solid)
+	return w.rayCast(o, d, maxD, w.solidBlock)
+}
+
+// solidBlock is Solid without the fence's extra half block, so rays aim at blocks that exist.
+func (w *World) solidBlock(x, y, z int) bool {
+	return y < 0 || blocks[w.Get(x, y, z)].Solid
 }
 
 // RayCastAny is RayCast for aiming: it also stops at non-solid blocks such as torches.
+// RayCastLiquid also stops at water and lava, for buckets.
+func (w *World) RayCastLiquid(o, d rl.Vector3, maxD float32) RayHit {
+	return w.rayCast(o, d, maxD, func(x, y, z int) bool {
+		return w.solidBlock(x, y, z) || w.Get(x, y, z) != Air
+	})
+}
+
 func (w *World) RayCastAny(o, d rl.Vector3, maxD float32) RayHit {
 	return w.rayCast(o, d, maxD, func(x, y, z int) bool {
-		if w.Solid(x, y, z) {
+		if w.solidBlock(x, y, z) {
 			return true
 		}
 		b := w.Get(x, y, z)

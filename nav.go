@@ -59,7 +59,8 @@ func (g *NavGrid) refresh(w *World) {
 func (g *NavGrid) column(w *World, x, z int) bool {
 	h := w.Ground[z*worldW+x]
 	// Needs two blocks of headroom above the ground (water is wadeable).
-	walk := h+1 < worldH && !blocks[w.getLocal(x, h, z)].Solid && !blocks[w.getLocal(x, h+1, z)].Solid
+	walk := h+1 < worldH && !blocks[w.getLocal(x, h, z)].Solid && !blocks[w.getLocal(x, h+1, z)].Solid &&
+		(h == 0 || w.getLocal(x, h-1, z) != Fence) // fence tops are not a path
 	i := z*g.N + x
 	changed := g.Height[i] != h || g.Walk[i] != walk
 	g.Height[i], g.Walk[i] = h, walk

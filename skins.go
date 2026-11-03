@@ -47,6 +47,8 @@ const (
 	SkinRaptor
 	SkinDragon
 	SkinFrostDragon
+	SkinEarthDragon
+	SkinWaterDragon
 	numSkins
 )
 
@@ -519,11 +521,16 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 			return shade(col(60, 50, 40)) // claw
 		}
 		return shade(hide)
-	case SkinDragon, SkinFrostDragon:
+	case SkinDragon, SkinFrostDragon, SkinEarthDragon, SkinWaterDragon:
 		hide := col(170, 40, 30)
 		belly := col(220, 160, 70)
-		if kind == SkinFrostDragon {
+		switch kind {
+		case SkinFrostDragon:
 			hide, belly = col(120, 170, 220), col(220, 240, 255)
+		case SkinEarthDragon:
+			hide, belly = col(120, 90, 50), col(190, 165, 110)
+		case SkinWaterDragon:
+			hide, belly = col(40, 120, 150), col(150, 215, 225)
 		}
 		if face == 1 {
 			hide = belly
@@ -597,7 +604,7 @@ func materialOf(kind SkinKind, part int) material {
 		return matMetal
 	case SkinSkeleton:
 		return matBone
-	case SkinCreeper, SkinCroc, SkinDino, SkinRaptor, SkinBronto, SkinDragon, SkinFrostDragon:
+	case SkinCreeper, SkinCroc, SkinDino, SkinRaptor, SkinBronto, SkinDragon, SkinFrostDragon, SkinEarthDragon, SkinWaterDragon:
 		return matScale
 	case SkinSpider, SkinPig, SkinCow, SkinSheep, SkinWolf, SkinCat, SkinCatBlack, SkinCatTabby, SkinHorse, SkinHorseBlack, SkinHorseWhite, SkinKangaroo, SkinEmu, SkinKoala, SkinWombat, SkinPlatypus:
 		return matFur

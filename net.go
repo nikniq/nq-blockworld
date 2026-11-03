@@ -497,6 +497,8 @@ func (g *Game) hostHandle(from uint32, m *Msg) {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
 			} else if pl.B.Placeable() && (t == Air || (t.Liquid() && !blocks[pl.B].Tiny)) && !(blocks[pl.B].Solid && g.blockOccupied(pl.X, pl.Y, pl.Z)) {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
+			} else if (pl.B == Water && (t == Air || t == Lava)) || (pl.B == Air && t == Water) {
+				g.applyBucket(pl.X, pl.Y, pl.Z, pl.B) // a bucket poured or filled
 			}
 		}
 	case m.Prime != nil:

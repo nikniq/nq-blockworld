@@ -43,6 +43,7 @@ const (
 	ItemRod
 	ItemBoat
 	ItemFlag
+	ItemBucket
 )
 
 // Item is one hotbar entry: a tool, or a stack of blocks from the inventory.
@@ -201,6 +202,8 @@ func (p *Player) Hotbar() []Item {
 			items = append(items, Item{ItemBoat, b})
 		} else if b == FlagItem && p.Inv[b] > 0 {
 			items = append(items, Item{ItemFlag, b})
+		} else if (b == Bucket || b == WaterBucket) && p.Inv[b] > 0 {
+			items = append(items, Item{ItemBucket, b})
 		}
 	}
 	return items
