@@ -3138,7 +3138,7 @@ func (g *Game) updateSettings() {
 	case rl.IsKeyPressed(rl.KeyN):
 		settings.Music = !settings.Music
 		if !settings.Music && g.Audio.ok {
-			rl.StopSound(g.Audio.Music)
+			g.Audio.Music.Stop()
 		}
 	case rl.IsKeyPressed(rl.KeyG):
 		settings.Mode = (settings.Mode + 1) % numModes
@@ -3428,27 +3428,61 @@ func (g *Game) drawPlayerList(sw, sh int32) {
 	}
 }
 
-// updateMusic keeps the ambient loop playing while in a world, lower at night.
-func (g *Game) updateMusic() {
+// updateMusic picks the piece that fits the moment and crossfades to it:
+// the menu theme outside a world, danger when hostiles close in, cave
+// music underground, and day or night otherwise.
+func (g *Game) updateMusic(dt float32) {
 	if !g.Audio.ok {
 		return
 	}
-	playing := g.State == StatePlaying || g.State == StateCrafting || g.State == StatePaused
-	if !settings.Music || !playing {
-		if rl.IsSoundPlaying(g.Audio.Music) {
-			rl.StopSound(g.Audio.Music)
+	want := MoodNone
+	if settings.Music {
+		switch g.State {
+		case StateMenu, StateJoin:
+			want = MoodMenu
+		case StatePlaying, StateCrafting, StatePaused, StateTrade, StateDialog, StateChest:
+			want = g.playMood(dt)
 		}
-		return
 	}
-	if !rl.IsSoundPlaying(g.Audio.Music) {
-		pitch := float32(1)
-		if g.Sky.IsNight() {
-			pitch = 0.88
+	g.Audio.Music.Update(want, dt, 0.5*settings.Volume)
+}
+
+// playMood decides the in-world mood. Danger lingers a few seconds after
+// the last threat so the music does not flicker at the edge of a fight.
+func (g *Game) playMood(dt float32) Mood {
+	m := g.Audio.Music
+	m.hold = max(0, m.hold-dt)
+	p := g.Player
+	threat := false
+	for _, e := range g.Enemies {
+		if e.Alive && WrapDist(e.Pos, p.Pos) < 14 {
+			threat = true
+			break
 		}
-		rl.SetSoundPitch(g.Audio.Music, pitch)
-		rl.SetSoundVolume(g.Audio.Music, 0.5*settings.Volume)
-		rl.PlaySound(g.Audio.Music)
 	}
+	if !threat {
+		for _, d := range g.Dragons {
+			if d.State == DragonAttack && d.Target == 0 && WrapDist(d.Pos, p.Pos) < 60 {
+				threat = true
+				break
+			}
+		}
+	}
+	if threat {
+		m.hold = 7
+	}
+	if m.hold > 0 {
+		return MoodDanger
+	}
+	eye := p.Eye()
+	x, y, z := floorI(eye.X)-originX, floorI(eye.Y), floorI(eye.Z)-originZ
+	if y >= 0 && y < worldH && g.World.sunLocal(wrapX(x), y, wrapZ(z)) < 3 && eye.Y < seaLevel-1 {
+		return MoodCave
+	}
+	if g.Sky.IsNight() {
+		return MoodNight
+	}
+	return MoodDay
 }
 
 // hostFromMenu hosts the saved world (or a new one) on the default port.
@@ -4155,7 +4189,7 @@ func main() {
 			g.Disc = nil
 		}
 		g.refreshMinimap(dt)
-		g.updateMusic()
+		g.updateMusic(dt)
 
 		rl.BeginDrawing()
 		usePost := (settings.Antialias || styleInk() || quality().RenderScale < 1) && postfx.begin()

@@ -40,8 +40,13 @@ block textures and sound effects are generated at startup.
 - Snow falls instead of rain over snowy ground, and hits knock you back.
 - **Achievements**: fourteen goals from breaking your first block to slaying a giant, with a toast when
   earned and a list on K. They persist across worlds.
-- Blocks crack progressively as you mine them, and a gentle generated music loop plays in the world
-  (N on the pause screen turns it off).
+- Blocks crack progressively as you mine them.
+- **Music** is composed and rendered by the game itself, no asset files: five pieces for five moods,
+  each built from a chord progression in a mode with a generated melody in call-and-response phrases,
+  a filtered pad, a bass line, an arpeggio and light percussion, mixed in stereo through a small room
+  reverb. A bright major theme plays by day, a slow minor one at night, drones and bells underground,
+  a driving piece when hostiles close in or a dragon hunts you, and a calm lydian theme on the menu;
+  the game crossfades between them as the moment changes. N on the pause screen turns it off.
 - **Game modes** (O on the main menu for the next world, G on the pause screen to switch):
   **Survival** is the normal game. **Creative** lets you fly and build with every block, unharmed.
   **Zombie** never sees the sun: hordes of the dead come every minute or so and grow without end;
