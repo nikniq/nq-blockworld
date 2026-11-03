@@ -175,6 +175,10 @@ block textures and sound effects are generated at startup.
   and reflects more at grazing angles, leaves let light through, a gradient sky dome glows around the sun,
   creatures cast soft shadows and embers drift up from lava.
 - Compass and coordinates under the minimap. F5 switches to a third-person view of your blocky self.
+- **Video recording**: F9 starts and stops a recording of the window. With [ffmpeg](https://ffmpeg.org) on
+  your PATH it writes a 30 fps H.264 MP4; without it, a half-size GIF of up to thirty seconds. Clips land in
+  a `recordings` folder beside your save (on macOS `~/Library/Application Support/blockworld/recordings`).
+  There is no sound track.
 - Score points for kills, headshots and nights survived. Your best score is saved between runs.
 
 | Input | Action |
@@ -192,6 +196,7 @@ block textures and sound effects are generated at startup.
 | Esc | Pause / resume (settings live here: sensitivity, volume, invert Y, swap mouse buttons) |
 | F11 | Fullscreen |
 | F5 | Third-person view |
+| F9 | Record a video (start / stop) |
 | H | Controls help |
 | M | Full map |
 | T (online) | Chat |

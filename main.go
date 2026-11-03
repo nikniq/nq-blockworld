@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,13 @@ var settings = defaultSettings()
 
 var perfFrames int
 var perfSeconds float32
+var perfWorst float32 // longest frame in the measured window
+var perfSlow int      // frames over 20 ms (a visible hitch at 60 Hz)
+var perfBuilds int    // chunk builds in the measured window
+var perfPhase [4]time.Duration
+var perfTrace = os.Getenv("BLOCKWORLD_TRACE") != "" // log every slow frame with its phase times
+
+func ms(d time.Duration) float32 { return float32(d.Microseconds()) / 1000 }
 
 // gameVersion is stamped by cx.sh (-X main.gameVersion=...).
 var gameVersion = "dev"
@@ -75,37 +83,40 @@ type Spark struct {
 }
 
 type Game struct {
-	State       State
-	World       *World
-	Nav         *NavGrid
-	Audio       *Audio
-	Sky         *Sky
-	Player      *Player
-	Enemies     []*Enemy
-	Animals     []*Animal
-	Primed      []Primed // lit TNT
-	Arrows      []Arrow
-	Drops       []Drop
-	AnimalCD    float32
-	GrowCD      float32 // sapling growth tick
-	ThirdPerson bool
-	Spawn       rl.Vector3 // respawn point (world spawn or the last bed used)
-	Deaths      int
-	ShowHelp    bool
-	ShowMap     bool
-	RainCD      float32
-	SpawnerCD   float32
-	DeepCD      float32
-	Asteroid    Asteroid
-	Craters     []Crater
-	Quake       Quake
-	QuakeCD     float32
-	Faults      []Fault
-	lagT        float32 // seconds of slow frames seen lately
-	lagGrace    float32 // seconds before the frame rate is judged (world loads are slow)
-	AsteroidCD  float32
-	RegrowCD    float32
-	RegrowSlice int
+	State    State
+	World    *World
+	Nav      *NavGrid
+	Audio    *Audio
+	Sky      *Sky
+	Player   *Player
+	Enemies  []*Enemy
+	Animals  []*Animal
+	Primed   []Primed // lit TNT
+	Arrows   []Arrow
+	Drops    []Drop
+	AnimalCD float32
+	GrowCD   float32 // sapling growth tick
+
+	targetsCache []Target // targets() result for frame targetsFrame
+	targetsFrame int
+	ThirdPerson  bool
+	Spawn        rl.Vector3 // respawn point (world spawn or the last bed used)
+	Deaths       int
+	ShowHelp     bool
+	ShowMap      bool
+	RainCD       float32
+	SpawnerCD    float32
+	DeepCD       float32
+	Asteroid     Asteroid
+	Craters      []Crater
+	Quake        Quake
+	QuakeCD      float32
+	Faults       []Fault
+	lagT         float32 // seconds of slow frames seen lately
+	lagGrace     float32 // seconds before the frame rate is judged (world loads are slow)
+	AsteroidCD   float32
+	RegrowCD     float32
+	RegrowSlice  int
 
 	Net            *Net
 	JoinText       string
@@ -2778,6 +2789,13 @@ func (g *Game) drawHUD() {
 		rl.DrawText("H help   M map", sw-120, sh-24, 14, rl.LightGray)
 	}
 	rl.DrawFPS(sw-90, 20)
+	if recorder.Active {
+		secs := int(recorder.Secs())
+		if int(recorder.Elapsed*2)%2 == 0 {
+			rl.DrawCircle(sw-118, 56, 6, rl.Red)
+		}
+		rl.DrawText(fmt.Sprintf("REC %d:%02d", secs/60, secs%60), sw-106, 48, 16, rl.White)
+	}
 	if g.ShowDebug {
 		lines := []string{
 			fmt.Sprintf("quality %s   render scale %.2f   fog %.0f", qualityNames[settings.Quality], quality().RenderScale, quality().FogEnd),
@@ -2861,6 +2879,7 @@ func (g *Game) drawHelp(sw, sh int32) {
 		"Two dragons roost on the highest peak and the snowy taiga. Keep your distance, or bring arrows: 150 health, diamonds when slain.",
 		"Dinosaurs: brontosaur herds browse the swamp willows, raptor packs and compys roam the outback, the tyrannosaur hunts alone.",
 		"Asteroids fall now and then: heed the warning and its bearing; the target and past craters show on the map (M). Mine the meteorite. Earthquakes heave and drop the ground along a fault line; mind the fissure. Trees regrow leaves; pick apples off red-dotted leaves.",
+		"F9 records a video of your game (MP4 with ffmpeg installed, otherwise a 30 s GIF) into the recordings folder beside your save.",
 		"H closes this help",
 	}
 	w := int32(760)
@@ -3108,7 +3127,7 @@ func (g *Game) drawOverlay() {
 		centered(fmt.Sprintf("[ / ]  mouse sensitivity  %.2f", settings.Sensitivity), sh/2+44, 20, rl.White)
 		centered(fmt.Sprintf("- / +  volume  %d%%", int(settings.Volume*100+0.5)), sh/2+70, 20, rl.White)
 		centered(fmt.Sprintf("I  invert mouse Y  %s", inv), sh/2+96, 20, rl.White)
-		centered(fmt.Sprintf("F11  fullscreen  %s", fs), sh/2+122, 20, rl.White)
+		centered(fmt.Sprintf("F11  fullscreen  %s      F9  record video", fs), sh/2+122, 20, rl.White)
 		swap := "left click mines, right click places"
 		if settings.SwapButtons {
 			swap = "right click mines, left click places"
@@ -3474,7 +3493,15 @@ func (g *Game) benchStep(frame int) bool {
 		p.Pos = rl.Vector3Add(g.Spawn, rl.NewVector3(0, 12, 0))
 		p.Pitch = -0.3
 	case frame == 90:
-		perfFrames, perfSeconds = 0, 0 // ignore generation and first builds
+		perfFrames, perfSeconds, perfWorst, perfSlow, perfBuilds = 0, 0, 0, 0, 0 // ignore generation, setup and first builds
+		relightCalls, relightCells = 0, 0
+	case frame == 120 && os.Getenv("BLOCKWORLD_RECTEST") != "":
+		recorder.Start() // exercise the video recorder under the harness
+	case frame == 360 && os.Getenv("BLOCKWORLD_RECTEST") != "":
+		recorder.Stop()
+		rl.TraceLog(rl.LogInfo, "RECTEST: %s frames=%d", recorder.Poll(true), recorder.Frames)
+	}
+	switch {
 	case frame > 90:
 		p.Yaw += 0.004
 		fwd := p.FlatForward()
@@ -3729,6 +3756,9 @@ func (g *Game) scriptedShots(frame int) bool {
 }
 
 func main() {
+	if v, err := strconv.Atoi(os.Getenv("BLOCKWORLD_SEED")); err == nil {
+		rand.Seed(int64(v)) // reproducible worlds for the benchmark and screenshot runs
+	}
 	hostAddr := flag.String("host", "", "host a world for others on this address, e.g. :7777")
 	joinAddr := flag.String("join", "", "join a hosted world, e.g. 192.168.1.10:7777")
 	name := flag.String("name", "", "your player name in multiplayer")
@@ -3750,7 +3780,11 @@ func main() {
 
 	// High-DPI: render at the framebuffer's real size so scaled desktops (Retina,
 	// Wayland and X11 with 150-200% scaling) fill the whole window.
-	rl.SetConfigFlags(rl.FlagVsyncHint | rl.FlagWindowResizable | rl.FlagWindowHighdpi)
+	flags := uint32(rl.FlagVsyncHint | rl.FlagWindowResizable | rl.FlagWindowHighdpi)
+	if os.Getenv("BLOCKWORLD_BENCH") != "" {
+		flags &^= rl.FlagVsyncHint // the benchmark measures frame time, not the display's refresh rate
+	}
+	rl.SetConfigFlags(flags)
 	rl.InitWindow(1280, 720, "Blockworld")
 	if !rl.IsWindowReady() {
 		fmt.Fprintln(os.Stderr, "blockworld: could not open a window (is the display available and unlocked?)")
@@ -3850,7 +3884,9 @@ func main() {
 	frame := 0
 
 	for !rl.WindowShouldClose() {
+		frameNo++
 		dt := min(rl.GetFrameTime(), 0.05)
+		recorder.Capture(rl.GetFrameTime())
 		if g.isHost() {
 			g.HostTick()
 		} else if g.isClient() {
@@ -3878,6 +3914,19 @@ func main() {
 			}
 		}
 
+		if rl.IsKeyPressed(rl.KeyF9) && g.World != nil && g.State != StateMenu && g.State != StateJoin {
+			if recorder.Active {
+				recorder.Stop()
+				g.say("Finishing recording...", 2)
+			} else {
+				recorder.Start()
+				if recorder.Err != "" {
+					g.say("Cannot record: "+recorder.Err, 3)
+				} else {
+					g.say("Recording  (F9 stops)", 2)
+				}
+			}
+		}
 		switch g.State {
 		case StateMenu:
 			if g.Disc == nil {
@@ -3961,7 +4010,9 @@ func main() {
 				g.CraftHover = -1
 				rl.EnableCursor()
 			} else {
+				tU := time.Now()
 				g.update(dt)
+				perfPhase[0] = time.Since(tU)
 			}
 		case StateCrafting:
 			if rl.IsKeyPressed(rl.KeyEscape) || rl.IsKeyPressed(rl.KeyE) {
@@ -4014,10 +4065,16 @@ func main() {
 		rl.BeginDrawing()
 		usePost := (settings.Antialias || styleInk() || quality().RenderScale < 1) && postfx.begin()
 		rl.ClearBackground(g.Sky.Color())
+		tD := time.Now()
+		buildsBefore := perfBuilds
 		g.draw3D()
+		perfPhase[1] = time.Since(tD)
+		tP := time.Now()
 		if usePost {
 			postfx.end()
 		}
+		perfPhase[2] = time.Since(tP)
+		tE := time.Now()
 		switch g.State {
 		case StatePlaying:
 			g.drawHUD()
@@ -4041,15 +4098,30 @@ func main() {
 			g.drawHUD()
 			g.drawOverlay()
 		}
+		if msg := recorder.Poll(false); msg != "" {
+			g.say(msg, 3)
+		}
 		rl.EndDrawing()
+		perfPhase[3] = time.Since(tE)
 		if g.State == StatePlaying {
 			perfFrames++
 			perfSeconds += rl.GetFrameTime()
+			perfWorst = max(perfWorst, rl.GetFrameTime())
+			if rl.GetFrameTime() > 0.02 {
+				perfSlow++
+				if perfTrace {
+					rl.TraceLog(rl.LogInfo, "SLOW frame=%d dt=%.1fms update=%.1f draw3D=%.1f post=%.1f end=%.1f builds=%d relights=%d", frameNo, rl.GetFrameTime()*1000, ms(perfPhase[0]), ms(perfPhase[1]), ms(perfPhase[2]), ms(perfPhase[3]), perfBuilds-buildsBefore, relightCalls)
+				}
+			}
 			g.autoQuality(rl.GetFrameTime())
 		}
 	}
 	if shots || soak || bench {
-		rl.TraceLog(rl.LogInfo, "PERF: frames=%d avgFPS=%.1f lastChunks=%d lastVerts=%dk relights=%d cols=%dk ver=%d", perfFrames, float32(perfFrames)/max(perfSeconds, 0.001), renderStats.Chunks, renderStats.Verts/1000, relightCalls, relightCells/1000, g.World.Version)
+		rl.TraceLog(rl.LogInfo, "PERF: frames=%d avgFPS=%.1f worst=%.1fms slow=%d builds=%d lastChunks=%d lastVerts=%dk relights=%d cols=%dk ver=%d", perfFrames, float32(perfFrames)/max(perfSeconds, 0.001), perfWorst*1000, perfSlow, perfBuilds, renderStats.Chunks, renderStats.Verts/1000, relightCalls, relightCells/1000, g.World.Version)
+	}
+	if recorder.Active {
+		recorder.Stop()
+		recorder.Poll(true) // finish the file before the window goes
 	}
 	if g.State != StateMenu && !shots && !soak && !bench {
 		g.leaveWorld() // closing the window keeps the world
