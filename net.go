@@ -852,8 +852,14 @@ func (g *Game) localTarget() Target {
 }
 
 // targets lists everyone hostiles may chase.
+// targets lists everything a hostile may hunt. Dozens of creatures ask every
+// frame, so the list is built once per frame and shared; frameNo is only
+// advanced by the main loop, so tests and the headless server always rebuild.
 func (g *Game) targets() []Target {
-	ts := []Target{}
+	if frameNo != 0 && g.targetsFrame == frameNo {
+		return g.targetsCache
+	}
+	ts := g.targetsCache[:0]
 	if g.Player.HP > 0 && !g.Headless && !settings.Creative {
 		ts = append(ts, g.localTarget())
 	}
@@ -862,12 +868,16 @@ func (g *Game) targets() []Target {
 			ts = append(ts, r.Target())
 		}
 	}
-	ts = append(ts, g.villagerTargets()...)
+	ts = g.appendVillagerTargets(ts)
 	if len(ts) == 0 {
 		ts = append(ts, g.localTarget())
 	}
+	g.targetsCache, g.targetsFrame = ts, frameNo
 	return ts
 }
+
+// frameNo counts rendered frames; zero outside the main loop.
+var frameNo int
 
 func (g *Game) nearestTarget(pos rl.Vector3) Target {
 	best := g.localTarget()

@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"math/rand"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -395,6 +396,14 @@ type World struct {
 	Biome          []Biome                    // per column
 	OnSet          func(x, y, z int, b Block) // called after every Set (multiplayer broadcast)
 	relight        map[int]*editBox           // chunks with pending edits and the cells they touched
+	lightOld       []uint8                    // relight scratch: the region's previous light
+	lastReady      []cand                     // chunks drawn by this frame's opaque pass
+	scratchDirty   []cand                     // visibleChunks scratch
+	lightQueue     []int32                    // relight scratch: the flood-fill frontier
+	sunBottom      []int32                    // relight scratch: lowest sunlit cell per column
+	xsScratch      []int32                    // relight scratch: wrapped x of each region column
+	navDirty       []int32                    // columns edited since the nav grid last looked
+	navAll         bool                       // too many edits to list: the nav grid refreshes fully
 	chunks         []*chunk
 	ncx            int
 	ncz            int
@@ -534,9 +543,13 @@ func (w *World) relightRegion(x0, z0, x1, z1, y0, y1 int) {
 		return
 	}
 	// Sunlight below the region depends on whether the column above it is
-	// open. If any column's answer changed, the region must reach the floor.
+	// open. Where a column's answer changed, the region must extend down to
+	// where that column's sunlight stops (the first block below) plus the
+	// fifteen cells light can spread from there; not to bedrock, which used
+	// to make every leaf grown over open grass relight a full-height slab.
 	if y0 > 0 {
-		for z := z0; z < z1 && y0 > 0; z++ {
+		floor := y0
+		for z := z0; z < z1; z++ {
 			for x := x0; x < x1; x++ {
 				open := true
 				for y := worldH - 1; y >= y0-1; y-- {
@@ -545,40 +558,98 @@ func (w *World) relightRegion(x0, z0, x1, z1, y0, y1 int) {
 						break
 					}
 				}
-				if was := w.Light[cellIndex(x, y0-1, z)]>>4 == 15; was != open {
-					y0 = 0
-					break
+				if was := w.Light[cellIndex(x, y0-1, z)]>>4 == 15; was == open {
+					continue
 				}
+				stop := y0 - 1
+				for stop > 0 {
+					if b := w.getLocal(wrapX(x), stop-1, wrapZ(z)); b != Air && !blocks[b].Tiny {
+						break
+					}
+					stop--
+				}
+				floor = min(floor, stop-16)
 			}
 		}
+		y0 = max(0, floor)
 	}
 	relightCells += (x1 - x0) * (z1 - z0) * (y1 - y0)
 	inRegion := func(x, y, z int) bool {
 		return y >= y0 && y < y1 && wrapI(x-x0, worldW) < x1-x0 && wrapI(z-z0, worldD) < z1-z0
 	}
-	old := make([]uint8, 0, (x1-x0)*(z1-z0)*(y1-y0))
+	// Wrapped column coordinates, computed once rather than per cell.
+	xs := w.xsScratch[:0]
+	for x := x0; x < x1; x++ {
+		xs = append(xs, int32(wrapX(x)))
+	}
+	w.xsScratch = xs
+	old := w.lightOld[:0]
 	for y := y0; y < y1; y++ {
 		for z := z0; z < z1; z++ {
-			for x := x0; x < x1; x++ {
-				i := cellIndex(x, y, z)
+			row := (y*worldD + wrapZ(z)) * worldW
+			for _, x := range xs {
+				i := row + int(x)
 				old = append(old, w.Light[i])
 				w.Light[i] = 0
 			}
 		}
 	}
-	var queue []int32
+	queue := w.lightQueue[:0]
 	// Sunlight falls straight down through air until it hits anything.
+	// sb records each column's lowest sunlit cell (y1 when none in range).
+	rw, rd := x1-x0, z1-z0
+	sb := w.sunBottom[:0]
 	for z := z0; z < z1; z++ {
-		for x := x0; x < x1; x++ {
-			for y := worldH - 1; y >= y0; y-- {
-				b := w.getLocal(wrapX(x), y, wrapZ(z))
+		wz := wrapZ(z)
+		for _, wx := range xs {
+			bottom := y1
+			// Everything from the column's top (w.Height) up is air: sunlit
+			// without looking at the blocks.
+			top := w.Height[wz*worldW+int(wx)]
+			for y := y1 - 1; y >= max(top, y0); y-- {
+				w.Light[(y*worldD+wz)*worldW+int(wx)] = 15 << 4
+				bottom = y
+			}
+			for y := min(top, worldH) - 1; y >= y0; y-- {
+				b := w.Blocks[(y*worldD+wz)*worldW+int(wx)]
 				if b != Air && !blocks[b].Tiny {
 					break
 				}
 				if y < y1 {
-					w.Light[cellIndex(x, y, z)] = 15 << 4
-					queue = append(queue, int32(cellIndex(x, y, z)))
+					w.Light[(y*worldD+wz)*worldW+int(wx)] = 15 << 4
+					bottom = y
 				}
+			}
+			sb = append(sb, int32(bottom))
+		}
+	}
+	w.sunBottom = sb
+	// Only sunlit cells that border an unlit cell inside the region join the
+	// flood fill: the lowest one in each column, and those beside a
+	// neighbouring column whose sunlight stops higher up. The open sky is most
+	// of a region's cells and the fill had nothing to do there.
+	for z := z0; z < z1; z++ {
+		for x := x0; x < x1; x++ {
+			bottom := int(sb[(z-z0)*rw+x-x0])
+			if bottom >= y1 {
+				continue
+			}
+			edge := bottom + 1
+			for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+				nx, nz := x+d[0], z+d[1]
+				// A region the full width of the world wraps onto itself.
+				if rw == worldW {
+					nx = x0 + wrapI(nx-x0, worldW)
+				}
+				if rd == worldD {
+					nz = z0 + wrapI(nz-z0, worldD)
+				}
+				if nx >= x0 && nx < x1 && nz >= z0 && nz < z1 {
+					edge = max(edge, int(sb[(nz-z0)*rw+nx-x0]))
+				}
+			}
+			for y := bottom; y < min(edge, y1); y++ {
+				queue = append(queue, int32(cellIndex(x, y, z)))
 			}
 		}
 	}
@@ -656,18 +727,35 @@ func (w *World) relightRegion(x0, z0, x1, z1, y0, y1 int) {
 	k := 0
 	for y := y0; y < y1; y++ {
 		for z := z0; z < z1; z++ {
-			for x := x0; x < x1; x++ {
-				if old[k] != w.Light[cellIndex(x, y, z)] {
-					w.chunks[(wrapZ(z)/chunkSize)*w.ncx+wrapX(x)/chunkSize].dirty = true
+			wz := wrapZ(z)
+			row := (y*worldD + wz) * worldW
+			for _, x := range xs {
+				if old[k] != w.Light[row+int(x)] {
+					w.chunks[(wz/chunkSize)*w.ncx+int(x)/chunkSize].dirty = true
 				}
 				k++
 			}
 		}
 	}
+	// Keep the scratch space for the next relight, but not the whole-world
+	// sized arrays the first light pass needed.
+	if cap(old) <= 1<<22 {
+		w.lightOld = old
+	}
+	if cap(queue) <= 1<<22 {
+		w.lightQueue = queue
+	}
 }
 
 // editBox is the span of cells edited in one chunk since the last relight (local coordinates).
 type editBox struct{ x0, y0, z0, x1, y1, z1 int }
+
+// cost is the number of cells a relight of this box visits once it has been
+// grown by the distance light travels.
+func (b editBox) cost() int {
+	const reach = 16
+	return (b.x1 - b.x0 + 2*reach) * (b.z1 - b.z0 + 2*reach) * (b.y1 - b.y0 + 2*reach)
+}
 
 // lightAlike reports whether swapping one block for the other leaves every
 // light calculation the same: same cost to pass through, same emission and
@@ -679,14 +767,22 @@ func lightAlike(a, b Block) bool {
 
 var relightCalls, relightCells int // profiling counters for the PERF log
 
-// flushLight recomputes lighting around every cell edited since the last
-// frame. Edits in nearby chunks are merged into one region; each region is
-// the edits' bounding box grown by the 15 blocks light can travel, in height
-// as well, so a leaf growing on one tree does not relight three chunks of sky.
+// flushLight recomputes lighting around cells edited since the last frame.
+// Edits in nearby chunks are merged into one region; each region is the
+// edits' bounding box grown by the 15 blocks light can travel, in height as
+// well, so a leaf growing on one tree does not relight three chunks of sky.
+// Regions are processed within a time budget and the rest wait for the next
+// frame: a growth tick that touches trees all over the map used to relight
+// them all at once and freeze a frame for most of a tenth of a second.
 func (w *World) flushLight() {
 	if len(w.relight) == 0 {
 		return
 	}
+	type region struct {
+		key int
+		box editBox
+	}
+	var regions []region
 	done := map[int]bool{}
 	for ci, box := range w.relight {
 		if done[ci] {
@@ -699,17 +795,39 @@ func (w *World) flushLight() {
 				continue
 			}
 			ii, jj := cj%w.ncx, cj/w.ncx
-			if abs(ii-i) <= 2 && abs(jj-j) <= 2 {
-				u.x0, u.y0, u.z0 = min(u.x0, bj.x0), min(u.y0, bj.y0), min(u.z0, bj.z0)
-				u.x1, u.y1, u.z1 = max(u.x1, bj.x1), max(u.y1, bj.y1), max(u.z1, bj.z1)
+			if abs(ii-i) > 2 || abs(jj-j) > 2 {
+				continue
+			}
+			// Merge only when one relight of the union is cheaper than two:
+			// leaves growing on trees three chunks apart used to be swept
+			// into a single slab mostly made of untouched ground and sky.
+			m := editBox{min(u.x0, bj.x0), min(u.y0, bj.y0), min(u.z0, bj.z0), max(u.x1, bj.x1), max(u.y1, bj.y1), max(u.z1, bj.z1)}
+			if m.cost() <= u.cost()+bj.cost() {
+				u = m
 				done[cj] = true
 			}
 		}
 		done[ci] = true
-		const reach = 16
-		w.relightRegion(u.x0-reach, u.z0-reach, u.x1+reach, u.z1+reach, max(0, u.y0-reach), min(worldH, u.y1+reach))
+		regions = append(regions, region{ci, u})
 	}
 	w.relight = map[int]*editBox{}
+	const reach = 16
+	const budget = 3 * time.Millisecond
+	start := time.Now()
+	for n, r := range regions {
+		if n > 0 && time.Since(start) > budget {
+			// Back in the queue; later edits nearby merge into it as usual.
+			box := r.box
+			w.relight[r.key] = &box
+			continue
+		}
+		u := r.box
+		t0, c0 := time.Now(), relightCells
+		w.relightRegion(u.x0-reach, u.z0-reach, u.x1+reach, u.z1+reach, max(0, u.y0-reach), min(worldH, u.y1+reach))
+		if perfTrace {
+			rl.TraceLog(rl.LogInfo, "RELIGHT %dx%dx%d cells=%dk %.1fms", u.x1-u.x0+2*reach, u.z1-u.z0+2*reach, u.y1-u.y0+2*reach, (relightCells-c0)/1000, ms(time.Since(t0)))
+		}
+	}
 }
 
 // ---------- generation ----------
@@ -1511,6 +1629,11 @@ func (w *World) Set(x, y, z int, b Block) {
 	w.Blocks[(y*worldD+lz)*worldW+lx] = b
 	w.recomputeHeight(lx, lz)
 	w.Version++
+	if len(w.navDirty) < 4096 {
+		w.navDirty = append(w.navDirty, int32(lz*worldW+lx))
+	} else {
+		w.navAll = true
+	}
 	cx, cz := lx/chunkSize, lz/chunkSize
 	if !lightAlike(old, b) {
 		// Only changes that can alter light queue a relight; grass turning to
@@ -1704,8 +1827,33 @@ func (m *meshBuf) setLastFaceAlpha(a uint8) {
 	}
 }
 
+// vertexBufs is one set of CPU vertex arrays. Chunk builds borrow a set from
+// bufPool, fill it, upload it and hand it back, so a rebuild appends into
+// memory that is already the right size instead of growing four slices from
+// nothing (that growth was a sixth of all CPU time and most of the GC churn).
+type vertexBufs struct {
+	verts, norms, uvs []float32
+	cols              []uint8
+}
+
+var bufPool []vertexBufs
+
+// reset readies the buffer for a build, borrowing arrays from the pool.
 func (m *meshBuf) reset() {
+	if m.verts == nil && len(bufPool) > 0 {
+		b := bufPool[len(bufPool)-1]
+		bufPool = bufPool[:len(bufPool)-1]
+		m.verts, m.norms, m.uvs, m.cols = b.verts, b.norms, b.uvs, b.cols
+	}
 	m.verts, m.norms, m.uvs, m.cols = m.verts[:0], m.norms[:0], m.uvs[:0], m.cols[:0]
+}
+
+// release returns the build arrays to the pool once the GPU has its copy.
+func (m *meshBuf) release() {
+	if m.verts != nil {
+		bufPool = append(bufPool, vertexBufs{m.verts[:0], m.norms[:0], m.uvs[:0], m.cols[:0]})
+	}
+	m.verts, m.norms, m.uvs, m.cols = nil, nil, nil, nil
 }
 
 func (m *meshBuf) free() {
@@ -1719,6 +1867,7 @@ func (m *meshBuf) free() {
 func (m *meshBuf) upload() {
 	m.free()
 	if len(m.verts) == 0 {
+		m.release()
 		return
 	}
 	m.mesh.VertexCount = int32(len(m.verts) / 3)
@@ -1729,9 +1878,11 @@ func (m *meshBuf) upload() {
 	m.mesh.Colors = &m.cols[0]
 	rl.UploadMesh(&m.mesh, false)
 	m.loaded = true
-	// The GPU has its copy; drop the CPU buffers (a large world would otherwise
-	// hold hundreds of megabytes of vertices). Rebuilds reallocate.
-	m.verts, m.norms, m.uvs, m.cols = nil, nil, nil, nil
+	// The GPU has its copy. Drawing goes through the VAO and unloading only
+	// needs the buffer ids, so the CPU arrays are not referenced again: clear
+	// the pointers and give the arrays back for the next build.
+	m.mesh.Vertices, m.mesh.Normals, m.mesh.Texcoords, m.mesh.Colors = nil, nil, nil, nil
+	m.release()
 }
 
 func (w *World) buildChunk(ci, cj int, c *chunk) {
@@ -2129,16 +2280,20 @@ var renderStats struct {
 
 // visibleChunks walks the chunks in view, building at most a few dirty ones
 // per frame (nearest first) so a new area streams in without a stall.
-func (w *World) visibleChunks(cam rl.Camera3D, fn func(c *chunk, m rl.Matrix)) {
+// visibleChunks calls fn for every chunk worth drawing. The opaque pass
+// (build=true) also flushes lighting and rebuilds dirty chunks within the
+// frame's time budget; the translucent pass that follows reuses its list, so
+// a backlog never costs two rounds of builds in one frame.
+func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(c *chunk, m rl.Matrix)) {
+	if !build {
+		for _, k := range w.lastReady {
+			fn(k.c, rl.MatrixTranslate(k.ox, 0, k.oz))
+		}
+		return
+	}
 	w.flushLight()
 	fwd := rl.Vector3Normalize(rl.Vector3Subtract(cam.Target, cam.Position))
-	type cand struct {
-		c      *chunk
-		ci, cj int
-		ox, oz float32
-		d2     float32
-	}
-	var ready, dirty []cand
+	ready, dirty := w.lastReady[:0], w.scratchDirty[:0]
 	for cj := 0; cj < w.ncz; cj++ {
 		for ci := 0; ci < w.ncx; ci++ {
 			c := w.chunks[cj*w.ncx+ci]
@@ -2166,14 +2321,22 @@ func (w *World) visibleChunks(cam rl.Camera3D, fn func(c *chunk, m rl.Matrix)) {
 	// frame of a world builds everything in view (the load pause hides it),
 	// and a large backlog (after a teleport or respawn) clears in about a
 	// second rather than trickling in.
-	budget := quality().Builds
-	if !w.warmed {
-		budget = len(dirty)
-		w.warmed = true
-	} else if len(dirty) > 24 {
-		budget = max(budget, len(dirty)/30)
+	// The budget is time, not a count: builds vary from a flat beach section
+	// to a forest full of leaves, and a count of four could take 20 ms. At
+	// least one chunk is built per frame so a backlog always drains; a large
+	// one (a teleport, a respawn) gets a bigger slice so it clears in about a
+	// second rather than trickling in.
+	budget := time.Duration(quality().BuildMS * float32(time.Millisecond))
+	if len(dirty) > 24 {
+		budget *= 3
 	}
-	for i := 0; i < len(dirty) && i < budget; i++ {
+	if !w.warmed {
+		budget = time.Hour // the load pause hides the first frame's builds
+		w.warmed = true
+	}
+	start := time.Now()
+	built := 0
+	for i := 0; i < len(dirty) && (i == 0 || time.Since(start) < budget); i++ {
 		best := i
 		for j := i + 1; j < len(dirty); j++ {
 			if dirty[j].d2 < dirty[best].d2 {
@@ -2182,16 +2345,34 @@ func (w *World) visibleChunks(cam rl.Camera3D, fn func(c *chunk, m rl.Matrix)) {
 		}
 		dirty[i], dirty[best] = dirty[best], dirty[i]
 		k := dirty[i]
+		t0 := time.Now()
 		w.buildChunk(k.ci, k.cj, k.c)
+		if d := time.Since(t0); d > 4*time.Millisecond && perfTrace {
+			nv := 0
+			for s := 0; s < chunkSections; s++ {
+				nv += int(k.c.opaque[s].mesh.VertexCount + k.c.trans[s].mesh.VertexCount)
+			}
+			rl.TraceLog(rl.LogInfo, "BUILD chunk %d,%d took %.1fms verts=%d d2=%.0f", k.ci, k.cj, ms(d), nv, k.d2)
+		}
+		perfBuilds++
+		built++
 		k.c.dirty = false
 		ready = append(ready, k)
 	}
-	renderStats.Pending = max(0, len(dirty)-budget)
-	renderStats.Chunks = 0
+	renderStats.Pending = max(0, len(dirty)-built)
+	renderStats.Chunks = len(ready)
+	w.lastReady, w.scratchDirty = ready, dirty
 	for _, k := range ready {
-		renderStats.Chunks++
 		fn(k.c, rl.MatrixTranslate(k.ox, 0, k.oz))
 	}
+}
+
+// cand is a chunk in view: its drawing offset and distance from the camera.
+type cand struct {
+	c      *chunk
+	ci, cj int
+	ox, oz float32
+	d2     float32
 }
 
 // sectionVisible decides whether a vertical section of a chunk at the given
@@ -2216,7 +2397,7 @@ func (w *World) Draw(cam rl.Camera3D) {
 	if !w.gpu {
 		w.initGPU()
 	}
-	w.visibleChunks(cam, func(c *chunk, m rl.Matrix) {
+	w.visibleChunks(cam, true, func(c *chunk, m rl.Matrix) {
 		for k := 0; k < chunkSections; k++ {
 			if c.opaque[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
 				renderStats.Verts += int(c.opaque[k].mesh.VertexCount)
@@ -2234,7 +2415,7 @@ func (w *World) DrawTranslucent(cam rl.Camera3D) {
 		rl.SetShaderValue(w.shader, w.locWater, []float32{1}, rl.ShaderUniformFloat)
 	}
 	rl.DisableBackfaceCulling()
-	w.visibleChunks(cam, func(c *chunk, m rl.Matrix) {
+	w.visibleChunks(cam, false, func(c *chunk, m rl.Matrix) {
 		for k := 0; k < chunkSections; k++ {
 			if c.trans[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
 				renderStats.Verts += int(c.trans[k].mesh.VertexCount)

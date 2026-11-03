@@ -5,8 +5,9 @@ import (
 )
 
 const (
-	navStepUp   = 1 // blocks an enemy can climb in one step
-	navDropDown = 3 // blocks an enemy will willingly drop
+	navStepUp   = 1   // blocks an enemy can climb in one step
+	navDropDown = 3   // blocks an enemy will willingly drop
+	navReach    = 120 // walking distance the field covers around each target
 )
 
 // NavGrid is a flow field over the terrain surface (highest solid block per column): every walkable column
@@ -24,6 +25,7 @@ type NavGrid struct {
 	valid    bool
 	version  int
 	cooldown float32 // seconds until the field may rebuild for a moved target
+	Reach    int32   // walking distance the field covers around each target
 }
 
 func NewNavGrid(w *World) *NavGrid {
@@ -35,22 +37,54 @@ func NewNavGrid(w *World) *NavGrid {
 		Height: make([]int, n*n),
 		Dist:   make([]int32, n*n),
 		queue:  make([]int32, 0, n*n),
+		Reach:  navReach,
 	}
 	g.refresh(w)
 	return g
 }
 
+// refresh recomputes every column and invalidates the field.
 func (g *NavGrid) refresh(w *World) {
 	g.version = w.Version
 	for z := 0; z < g.N; z++ {
 		for x := 0; x < g.N; x++ {
-			h := w.Ground[z*worldW+x]
-			g.Height[z*g.N+x] = h
-			// Needs two blocks of headroom above the ground (water is wadeable).
-			g.Walk[z*g.N+x] = h+1 < worldH && !blocks[w.getLocal(x, h, z)].Solid && !blocks[w.getLocal(x, h+1, z)].Solid
+			g.column(w, x, z)
 		}
 	}
+	w.navDirty, w.navAll = w.navDirty[:0], false
 	g.valid = false
+}
+
+// column recomputes one column and reports whether it changed.
+func (g *NavGrid) column(w *World, x, z int) bool {
+	h := w.Ground[z*worldW+x]
+	// Needs two blocks of headroom above the ground (water is wadeable).
+	walk := h+1 < worldH && !blocks[w.getLocal(x, h, z)].Solid && !blocks[w.getLocal(x, h+1, z)].Solid
+	i := z*g.N + x
+	changed := g.Height[i] != h || g.Walk[i] != walk
+	g.Height[i], g.Walk[i] = h, walk
+	return changed
+}
+
+// sync brings the grid up to date with the world's edits. Only the edited
+// columns are recomputed, and the field is only invalidated when one of them
+// actually changed height or walkability: a leaf growing in a canopy or a
+// torch on a wall used to rebuild the whole flow field.
+func (g *NavGrid) sync(w *World) {
+	if w.Version == g.version {
+		return
+	}
+	if w.navAll {
+		g.refresh(w)
+		return
+	}
+	for _, c := range w.navDirty {
+		if g.column(w, int(c)%worldW, int(c)/worldW) {
+			g.valid = false
+		}
+	}
+	w.navDirty = w.navDirty[:0]
+	g.version = w.Version
 }
 
 func (g *NavGrid) cellOf(p rl.Vector3) (int, int) {
@@ -79,9 +113,7 @@ func (g *NavGrid) canStep(ax, az, bx, bz int) bool {
 // Update rebuilds the field if the world changed or any target moved to
 // another cell. With several targets the field leads to the nearest one.
 func (g *NavGrid) Update(targets []rl.Vector3, w *World) {
-	if w.Version != g.version {
-		g.refresh(w)
-	}
+	g.sync(w)
 	cells := make([]int32, 0, len(targets))
 	for _, t := range targets {
 		tx, tz := g.cellOf(t)
@@ -130,10 +162,17 @@ func (g *NavGrid) Update(targets []rl.Vector3, w *World) {
 		}
 	}
 	// Breadth-first search outward; an edge A->B exists when B can step to A.
+	// The field stops Reach steps out: hostiles start near a player and
+	// anything farther walks straight toward its target until it is inside
+	// the field, which costs a fraction of flooding the whole map every
+	// quarter second as the player moves.
 	for head := 0; head < len(g.queue); head++ {
 		i := int(g.queue[head])
 		x, z := i%g.N, i/g.N
 		d := g.Dist[i] + 1
+		if d > g.Reach {
+			continue
+		}
 		for _, n := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 			nx, nz := wrapI(x+n[0], g.N), wrapI(z+n[1], g.N)
 			if g.canStep(nx, nz, x, z) && g.Dist[nz*g.N+nx] < 0 {

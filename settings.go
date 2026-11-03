@@ -55,18 +55,18 @@ type qualityParams struct {
 	FogEnd      float32 // draw distance in blocks
 	RenderScale float32 // framebuffer fraction the 3D scene is rendered at
 	EntityDist  float32 // creatures beyond this are not drawn
-	Builds      int     // chunk meshes built per frame
+	BuildMS     float32 // milliseconds per frame spent building chunk meshes
 	Clouds      bool
 }
 
 func quality() qualityParams {
 	switch settings.Quality {
 	case 0:
-		return qualityParams{FogEnd: 72, RenderScale: 0.5, EntityDist: 48, Builds: 2, Clouds: false}
+		return qualityParams{FogEnd: 72, RenderScale: 0.5, EntityDist: 48, BuildMS: 2, Clouds: false}
 	case 1:
-		return qualityParams{FogEnd: 110, RenderScale: 0.75, EntityDist: 80, Builds: 3, Clouds: true}
+		return qualityParams{FogEnd: 110, RenderScale: 0.75, EntityDist: 80, BuildMS: 2.5, Clouds: true}
 	}
-	return qualityParams{FogEnd: 160, RenderScale: 1, EntityDist: 140, Builds: 4, Clouds: true}
+	return qualityParams{FogEnd: 160, RenderScale: 1, EntityDist: 140, BuildMS: 3, Clouds: true}
 }
 
 const (

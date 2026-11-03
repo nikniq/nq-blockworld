@@ -13,6 +13,7 @@ func TestNavFieldReachesSpawn(t *testing.T) {
 	rand.Seed(1)
 	w := NewWorld()
 	nav := NewNavGrid(w)
+	nav.Reach = 1 << 30 // this test is about the world's connectivity, not the field's reach
 	spawn := w.SpawnPoint()
 	nav.Update([]rl.Vector3{spawn}, w)
 	walkable, reachable := 0, 0

@@ -317,8 +317,12 @@ func (g *Game) villagerTick(a *Animal, dt float32) {
 const villagerIDBit = uint32(1) << 30
 
 func (g *Game) villagerTargets() []Target {
+	return g.appendVillagerTargets(nil)
+}
+
+// appendVillagerTargets adds every living villager to ts.
+func (g *Game) appendVillagerTargets(ts []Target) []Target {
 	g.assignIDs() // villagers need stable ids before they can be targeted
-	var ts []Target
 	for _, a := range g.Animals {
 		if a.Alive && a.Kind == AnimalVillager {
 			ts = append(ts, Target{ID: villagerIDBit | a.ID, Pos: a.Pos, Eye: rl.Vector3Add(a.Pos, rl.NewVector3(0, 1.5, 0)), Box: a.BB()})
