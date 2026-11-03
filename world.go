@@ -112,6 +112,34 @@ const (
 	Fence
 	Bucket
 	WaterBucket
+	DoorTop
+	DoorTopOpen
+	TrapdoorClosed
+	TrapdoorOpen
+	AcaciaLog
+	AcaciaLeaves
+	AcaciaSapling
+	PalmLog
+	PalmLeaves
+	PalmSapling
+	Coconut
+	CherryLog
+	CherryLeaves
+	CherrySapling
+	Carrot
+	CarrotGrowing
+	CarrotRipe
+	Beetroot
+	BeetrootGrowing
+	BeetrootRipe
+	PumpkinSeeds
+	PumpkinStem
+	Pumpkin
+	MelonSeeds
+	MelonStem
+	Melon
+	MelonSlice
+	PumpkinPie
 	numBlocks
 )
 
@@ -156,7 +184,133 @@ var (
 	doorClosedBox = [2][3]float32{{0, 0, 0.4}, {1, 1, 0.6}}
 	doorOpenBox   = [2][3]float32{{0, 0, 0}, {0.2, 1, 1}}
 	fencePostBox  = [2][3]float32{{0.375, 0, 0.375}, {0.625, 1.5, 0.625}}
+	trapdoorBox   = [2][3]float32{{0, 0, 0}, {1, trapdoorH, 1}}
 )
+
+const trapdoorH = 0.1875 // a closed trapdoor is a thin slab at the bottom of its cell
+
+// doorBox orients a door to its doorway: closed, it spans the gap between the
+// walls either side; open, it swings back flat against the hinge wall. Door
+// tops copy the half below them.
+func (w *World) doorBox(lx, y, lz int, b Block) [2][3]float32 {
+	if b == DoorTop || b == DoorTopOpen {
+		y--
+	}
+	open := b == DoorOpen || b == DoorTopOpen
+	const t = 0.1875
+	wallX := w.getLocal(lx-1, y, lz).Opaque() || w.getLocal(lx+1, y, lz).Opaque()
+	wallZ := w.getLocal(lx, y, lz-1).Opaque() || w.getLocal(lx, y, lz+1).Opaque()
+	alongX := wallX || !wallZ // the door spans X when its walls are on the X sides
+	if !open {
+		if alongX {
+			return [2][3]float32{{0, 0, 0.5 - t/2}, {1, 1, 0.5 + t/2}}
+		}
+		return [2][3]float32{{0.5 - t/2, 0, 0}, {0.5 + t/2, 1, 1}}
+	}
+	if alongX {
+		if w.getLocal(lx+1, y, lz).Opaque() && !w.getLocal(lx-1, y, lz).Opaque() {
+			return [2][3]float32{{1 - t, 0, 0}, {1, 1, 1}}
+		}
+		return [2][3]float32{{0, 0, 0}, {t, 1, 1}}
+	}
+	if w.getLocal(lx, y, lz+1).Opaque() && !w.getLocal(lx, y, lz-1).Opaque() {
+		return [2][3]float32{{0, 0, 1 - t}, {1, 1, 1}}
+	}
+	return [2][3]float32{{0, 0, 0}, {1, 1, t}}
+}
+
+// openTrapdoorBox stands the trapdoor up against whichever side has a wall.
+func (w *World) openTrapdoorBox(lx, y, lz int) [2][3]float32 {
+	const t = trapdoorH
+	switch {
+	case w.getLocal(lx, y, lz-1).Opaque():
+		return [2][3]float32{{0, 0, 0}, {1, 1, t}}
+	case w.getLocal(lx, y, lz+1).Opaque():
+		return [2][3]float32{{0, 0, 1 - t}, {1, 1, 1}}
+	case w.getLocal(lx-1, y, lz).Opaque():
+		return [2][3]float32{{0, 0, 0}, {t, 1, 1}}
+	case w.getLocal(lx+1, y, lz).Opaque():
+		return [2][3]float32{{1 - t, 0, 0}, {1, 1, 1}}
+	}
+	return [2][3]float32{{0, 0, 0}, {1, 1, t}}
+}
+
+// isDoor reports whether a block is any half of a door, open or closed.
+func isDoor(b Block) bool {
+	return b == DoorClosed || b == DoorOpen || b == DoorTop || b == DoorTopOpen
+}
+
+// SetDoor writes both halves of a door whose bottom is at y.
+func (w *World) SetDoor(x, y, z int, open bool) {
+	lo, hi := DoorClosed, DoorTop
+	if open {
+		lo, hi = DoorOpen, DoorTopOpen
+	}
+	w.Set(x, y, z, lo)
+	w.Set(x, y+1, z, hi)
+}
+
+// setDoorLocal is SetDoor for world generation.
+func (w *World) setDoorLocal(lx, y, lz int) {
+	w.setLocal(lx, y, lz, DoorClosed)
+	w.setLocal(lx, y+1, lz, DoorTop)
+}
+
+// DoorBottom returns the y of the lower half of the door at a cell.
+func (w *World) DoorBottom(x, y, z int) int {
+	if b := w.Get(x, y, z); b == DoorTop || b == DoorTopOpen {
+		return y - 1
+	}
+	return y
+}
+
+// cropNext is the next growth stage of a crop block, or Air if it does not grow.
+func cropNext(b Block) Block {
+	switch b {
+	case Seeds:
+		return WheatGrowing
+	case WheatGrowing:
+		return Wheat
+	case CarrotGrowing:
+		return CarrotRipe
+	case BeetrootGrowing:
+		return BeetrootRipe
+	case PumpkinSeeds:
+		return PumpkinStem
+	case MelonSeeds:
+		return MelonStem
+	}
+	return Air
+}
+
+// NeedsSoil reports whether a block can only be planted on grass or dirt.
+func (b Block) NeedsSoil() bool {
+	switch b {
+	case Sapling, AcaciaSapling, PalmSapling, CherrySapling, Seeds, CarrotGrowing, BeetrootGrowing, PumpkinSeeds, MelonSeeds:
+		return true
+	}
+	return false
+}
+
+// Plants returns the crop a food item grows into when planted, or Air.
+func (b Block) Plants() Block {
+	switch b {
+	case Carrot:
+		return CarrotGrowing
+	case Beetroot:
+		return BeetrootGrowing
+	}
+	return Air
+}
+
+// IsLeaves reports whether a block is any tree's foliage.
+func (b Block) IsLeaves() bool {
+	switch b {
+	case Leaves, SpruceLeaves, EucLeaves, FruitLeaves, AcaciaLeaves, PalmLeaves, CherryLeaves:
+		return true
+	}
+	return false
+}
 
 // fenceBoxes is the post plus a pair of rails toward every neighbour a fence
 // joins: another fence or a full block.
@@ -356,6 +510,62 @@ var blocks = [numBlocks]blockInfo{
 		Pat: [3]texPattern{PatBucket, PatBucket, PatBucket}, MineTime: 0.1, Drops: Bucket, Item: true},
 	WaterBucket: {Name: "Water Bucket", Top: col(160, 164, 170), Side: col(160, 164, 170), Bottom: col(160, 164, 170),
 		Pat: [3]texPattern{PatWaterBucket, PatWaterBucket, PatWaterBucket}, MineTime: 0.1, Drops: WaterBucket, Item: true},
+	DoorTop: {Name: "Door", Top: col(150, 110, 65), Side: col(150, 110, 65), Bottom: col(150, 110, 65),
+		Pat: [3]texPattern{PatPlanks, PatDoorHigh, PatPlanks}, MineTime: 1.0, Drops: Air, Solid: true, Tiny: true, Box: &doorClosedBox},
+	DoorTopOpen: {Name: "Door (open)", Top: col(150, 110, 65), Side: col(150, 110, 65), Bottom: col(150, 110, 65),
+		Pat: [3]texPattern{PatPlanks, PatDoorHigh, PatPlanks}, MineTime: 1.0, Drops: Air, Tiny: true, Box: &doorOpenBox},
+	TrapdoorClosed: {Name: "Trapdoor", Top: col(160, 120, 70), Side: col(150, 110, 65), Bottom: col(140, 100, 60),
+		Pat: [3]texPattern{PatTrapdoor, PatPlanks, PatTrapdoor}, MineTime: 1.0, Drops: TrapdoorClosed, Solid: true, Tiny: true, Box: &trapdoorBox},
+	TrapdoorOpen: {Name: "Trapdoor (open)", Top: col(160, 120, 70), Side: col(150, 110, 65), Bottom: col(140, 100, 60),
+		Pat: [3]texPattern{PatPlanks, PatTrapdoor, PatPlanks}, MineTime: 1.0, Drops: TrapdoorClosed, Tiny: true, Box: &trapdoorBox},
+	AcaciaLog: {Name: "Acacia Log", Top: col(190, 110, 60), Side: col(110, 100, 90), Bottom: col(190, 110, 60),
+		Pat: [3]texPattern{PatLogTop, PatLogSide, PatLogTop}, MineTime: 1.5, Drops: AcaciaLog, Solid: true},
+	AcaciaLeaves: {Name: "Acacia Leaves", Top: col(110, 140, 60), Side: col(104, 134, 56), Bottom: col(90, 118, 50),
+		Pat: [3]texPattern{PatLeaves, PatLeaves, PatLeaves}, MineTime: 0.3, Drops: AcaciaLeaves, Solid: true},
+	AcaciaSapling: {Name: "Acacia Sapling", Top: col(110, 140, 60), Side: col(110, 140, 60), Bottom: col(90, 70, 40),
+		Pat: [3]texPattern{PatSapling, PatSapling, PatNoise}, MineTime: 0.05, Drops: AcaciaSapling, Tiny: true, Box: &saplingBox, Cross: true},
+	PalmLog: {Name: "Palm Log", Top: col(170, 140, 100), Side: col(150, 120, 80), Bottom: col(170, 140, 100),
+		Pat: [3]texPattern{PatLogTop, PatPalmSide, PatLogTop}, MineTime: 1.5, Drops: PalmLog, Solid: true},
+	PalmLeaves: {Name: "Palm Fronds", Top: col(70, 150, 60), Side: col(64, 140, 56), Bottom: col(56, 120, 50),
+		Pat: [3]texPattern{PatLeaves, PatLeaves, PatLeaves}, MineTime: 0.3, Drops: PalmLeaves, Solid: true},
+	PalmSapling: {Name: "Palm Sapling", Top: col(70, 150, 60), Side: col(70, 150, 60), Bottom: col(90, 70, 40),
+		Pat: [3]texPattern{PatSapling, PatSapling, PatNoise}, MineTime: 0.05, Drops: PalmSapling, Tiny: true, Box: &saplingBox, Cross: true},
+	Coconut: {Name: "Coconut", Top: col(110, 80, 50), Side: col(110, 80, 50), Bottom: col(110, 80, 50),
+		Pat: [3]texPattern{PatCoconut, PatCoconut, PatCoconut}, MineTime: 0.1, Drops: Coconut, Food: 4},
+	CherryLog: {Name: "Cherry Log", Top: col(200, 150, 120), Side: col(90, 55, 50), Bottom: col(200, 150, 120),
+		Pat: [3]texPattern{PatLogTop, PatLogSide, PatLogTop}, MineTime: 1.5, Drops: CherryLog, Solid: true},
+	CherryLeaves: {Name: "Cherry Blossom", Top: col(240, 170, 200), Side: col(236, 160, 195), Bottom: col(220, 140, 180),
+		Pat: [3]texPattern{PatLeaves, PatLeaves, PatLeaves}, MineTime: 0.3, Drops: CherryLeaves, Solid: true},
+	CherrySapling: {Name: "Cherry Sapling", Top: col(240, 170, 200), Side: col(240, 170, 200), Bottom: col(90, 70, 40),
+		Pat: [3]texPattern{PatSapling, PatSapling, PatNoise}, MineTime: 0.05, Drops: CherrySapling, Tiny: true, Box: &saplingBox, Cross: true},
+	Carrot: {Name: "Carrot", Top: col(235, 130, 40), Side: col(235, 130, 40), Bottom: col(235, 130, 40),
+		Pat: [3]texPattern{PatCarrot, PatCarrot, PatCarrot}, MineTime: 0.1, Drops: Carrot, Food: 3},
+	CarrotGrowing: {Name: "Carrots (growing)", Top: col(90, 170, 70), Side: col(90, 170, 70), Bottom: col(90, 170, 70),
+		Pat: [3]texPattern{PatCrop1, PatCrop1, PatCrop1}, MineTime: 0.05, Drops: Carrot, Tiny: true, Box: &plantBox, Cross: true},
+	CarrotRipe: {Name: "Carrots", Top: col(80, 160, 60), Side: col(80, 160, 60), Bottom: col(80, 160, 60),
+		Pat: [3]texPattern{PatCarrotCrop, PatCarrotCrop, PatCarrotCrop}, MineTime: 0.05, Drops: Carrot, Tiny: true, Box: &plantBox, Cross: true},
+	Beetroot: {Name: "Beetroot", Top: col(150, 30, 60), Side: col(150, 30, 60), Bottom: col(150, 30, 60),
+		Pat: [3]texPattern{PatBeet, PatBeet, PatBeet}, MineTime: 0.1, Drops: Beetroot, Food: 2},
+	BeetrootGrowing: {Name: "Beetroot (growing)", Top: col(90, 150, 70), Side: col(90, 150, 70), Bottom: col(90, 150, 70),
+		Pat: [3]texPattern{PatCrop1, PatCrop1, PatCrop1}, MineTime: 0.05, Drops: Beetroot, Tiny: true, Box: &plantBox, Cross: true},
+	BeetrootRipe: {Name: "Beetroot", Top: col(100, 140, 70), Side: col(100, 140, 70), Bottom: col(100, 140, 70),
+		Pat: [3]texPattern{PatBeetCrop, PatBeetCrop, PatBeetCrop}, MineTime: 0.05, Drops: Beetroot, Tiny: true, Box: &plantBox, Cross: true},
+	PumpkinSeeds: {Name: "Pumpkin Seeds", Top: col(120, 190, 80), Side: col(120, 190, 80), Bottom: col(120, 190, 80),
+		Pat: [3]texPattern{PatCrop0, PatCrop0, PatCrop0}, MineTime: 0.05, Drops: PumpkinSeeds, Tiny: true, Box: &cropBox, Cross: true},
+	PumpkinStem: {Name: "Pumpkin Vine", Top: col(100, 160, 60), Side: col(100, 160, 60), Bottom: col(100, 160, 60),
+		Pat: [3]texPattern{PatStem, PatStem, PatStem}, MineTime: 0.05, Drops: PumpkinSeeds, Tiny: true, Box: &plantBox, Cross: true},
+	Pumpkin: {Name: "Pumpkin", Top: col(220, 130, 40), Side: col(225, 125, 35), Bottom: col(200, 115, 35),
+		Pat: [3]texPattern{PatPumpkinTop, PatPumpkin, PatPumpkinTop}, MineTime: 0.8, Drops: Pumpkin, Solid: true},
+	MelonSeeds: {Name: "Melon Seeds", Top: col(120, 190, 80), Side: col(120, 190, 80), Bottom: col(120, 190, 80),
+		Pat: [3]texPattern{PatCrop0, PatCrop0, PatCrop0}, MineTime: 0.05, Drops: MelonSeeds, Tiny: true, Box: &cropBox, Cross: true},
+	MelonStem: {Name: "Melon Vine", Top: col(100, 160, 60), Side: col(100, 160, 60), Bottom: col(100, 160, 60),
+		Pat: [3]texPattern{PatStem, PatStem, PatStem}, MineTime: 0.05, Drops: MelonSeeds, Tiny: true, Box: &plantBox, Cross: true},
+	Melon: {Name: "Watermelon", Top: col(90, 150, 60), Side: col(80, 140, 55), Bottom: col(90, 150, 60),
+		Pat: [3]texPattern{PatMelonTop, PatMelon, PatMelonTop}, MineTime: 0.8, Drops: MelonSlice, Solid: true},
+	MelonSlice: {Name: "Melon Slice", Top: col(230, 70, 80), Side: col(230, 70, 80), Bottom: col(230, 70, 80),
+		Pat: [3]texPattern{PatMelonSlice, PatMelonSlice, PatMelonSlice}, MineTime: 0.1, Drops: MelonSlice, Food: 2},
+	PumpkinPie: {Name: "Pumpkin Pie", Top: col(225, 160, 80), Side: col(225, 160, 80), Bottom: col(225, 160, 80),
+		Pat: [3]texPattern{PatPie, PatPie, PatPie}, MineTime: 0.1, Drops: PumpkinPie, Food: 8},
 }
 
 // Opaque reports whether a block hides the faces of its neighbours.
@@ -366,7 +576,7 @@ func (b Block) lightCost() uint8 {
 	switch {
 	case b == Air || blocks[b].Tiny || b == Glass || b == Lava:
 		return 1
-	case b == Water || b == Leaves || b == SpruceLeaves || b == EucLeaves || b == FruitLeaves:
+	case b == Water || b.IsLeaves():
 		return 2
 	}
 	return 0
@@ -1122,15 +1332,29 @@ func (w *World) generate(seed int) {
 		r := rand.Float32()
 		switch biomes[z*worldW+x] {
 		case BiomeDesert:
-			if top == Sand && h > seaLevel+1 && r < 0.12 {
+			if top == Sand && h >= seaLevel && h <= seaLevel+3 && r < 0.05 {
+				w.placePalm(x, h, z, w.setLocal)
+			} else if top == Sand && h > seaLevel+1 && r < 0.12 {
 				for y := h; y < h+1+rand.Intn(3); y++ {
 					w.setLocal(x, y, z, Cactus)
 				}
 			}
 		case BiomePlains:
 			switch {
-			case top == Grass && r < 0.04:
+			case top == Grass && r < 0.025:
 				w.placeTree(x, h, z, w.setLocal)
+			case top == Grass && r < 0.045:
+				w.placeAcacia(x, h, z, w.setLocal)
+			case top == Grass && r < 0.06:
+				// Wild vegetables: a carrot or beetroot patch, the odd pumpkin.
+				switch rand.Intn(3) {
+				case 0:
+					w.setLocal(x, h, z, CarrotRipe)
+				case 1:
+					w.setLocal(x, h, z, BeetrootRipe)
+				default:
+					w.setLocal(x, h, z, Pumpkin)
+				}
 			case top == Grass && r < 0.45:
 				w.setLocal(x, h, z, TallGrass)
 			case top == Grass && r < 0.55:
@@ -1142,6 +1366,10 @@ func (w *World) generate(seed int) {
 				w.placeTree(x, h, z, w.setLocal)
 			case top == Grass && r < 0.42:
 				w.placeBirch(x, h, z, w.setLocal)
+			case top == Grass && r < 0.47:
+				w.placeCherry(x, h, z, w.setLocal)
+			case top == Grass && r < 0.48:
+				w.setLocal(x, h, z, Pumpkin)
 			case top == Grass && r < 0.6:
 				w.setLocal(x, h, z, TallGrass)
 			}
@@ -1153,6 +1381,8 @@ func (w *World) generate(seed int) {
 			switch {
 			case (top == Grass || top == Mud) && h > seaLevel && r < 0.09:
 				w.placeWillow(x, h, z, w.setLocal)
+			case top == Grass && h > seaLevel && r < 0.11:
+				w.setLocal(x, h, z, Melon) // wild watermelons
 			case (top == Grass || top == Mud) && r < 0.5:
 				w.setLocal(x, h, z, TallGrass)
 			case top == Mud && h <= seaLevel+1 && r < 0.6:
@@ -1426,12 +1656,109 @@ func (w *World) placeSpruce(x, y, z int, set func(x, y, z int, b Block)) {
 	set(x, y+th, z, SpruceLeaves)
 }
 
+// placeAcacia writes a savanna tree: a short trunk that leans, forks, and
+// opens into a flat, wide crown.
+func (w *World) placeAcacia(x, y, z int, set func(x, y, z int, b Block)) {
+	th := 4 + rand.Intn(2)
+	lean := [2]int{rand.Intn(3) - 1, rand.Intn(3) - 1}
+	cx, cz := x, z
+	for yy := y; yy < y+th; yy++ {
+		if yy >= y+2 {
+			cx, cz = x+lean[0], z+lean[1]
+		}
+		set(cx, yy, z, AcaciaLog)
+		if cz != z {
+			set(cx, yy, cz, AcaciaLog)
+		}
+	}
+	top := y + th - 1
+	for dz := -3; dz <= 3; dz++ {
+		for dx := -3; dx <= 3; dx++ {
+			d := dx*dx + dz*dz
+			if d > 10 {
+				continue
+			}
+			if b := w.getLocal(cx+dx, top, cz+dz); b == Air || b == TallGrass {
+				set(cx+dx, top, cz+dz, AcaciaLeaves)
+			}
+			if d <= 2 && w.getLocal(cx+dx, top+1, cz+dz) == Air {
+				set(cx+dx, top+1, cz+dz, AcaciaLeaves)
+			}
+		}
+	}
+}
+
+// placePalm writes a beach palm: a tall trunk that curves over, a tuft of
+// fronds drooping from the top, and a coconut or two under them.
+func (w *World) placePalm(x, y, z int, set func(x, y, z int, b Block)) {
+	th := 6 + rand.Intn(3)
+	dir := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}[rand.Intn(4)]
+	cx, cz := x, z
+	for yy := y; yy < y+th; yy++ {
+		if yy == y+th/2 || yy == y+th-2 {
+			cx, cz = cx+dir[0], cz+dir[1]
+		}
+		set(cx, yy, cz, PalmLog)
+	}
+	top := y + th - 1
+	set(cx, top+1, cz, PalmLeaves)
+	for _, d := range [8][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} {
+		long := d[0] == 0 || d[1] == 0
+		for i := 1; i <= 2; i++ {
+			if i == 2 && !long {
+				break
+			}
+			dy := 1 - i // fronds droop as they reach out
+			if i == 1 && !long {
+				dy = 0
+			}
+			if w.getLocal(cx+d[0]*i, top+dy, cz+d[1]*i) == Air {
+				set(cx+d[0]*i, top+dy, cz+d[1]*i, PalmLeaves)
+			}
+		}
+	}
+}
+
+// placeCherry writes a cherry tree: a dark trunk with a round pink crown.
+func (w *World) placeCherry(x, y, z int, set func(x, y, z int, b Block)) {
+	th := 4 + rand.Intn(2)
+	for yy := y; yy < y+th; yy++ {
+		set(x, yy, z, CherryLog)
+	}
+	top := y + th - 1
+	for dy := -1; dy <= 2; dy++ {
+		r := 3
+		if dy == 2 || dy == -1 {
+			r = 2
+		}
+		for dz := -r; dz <= r; dz++ {
+			for dx := -r; dx <= r; dx++ {
+				if dx*dx+dz*dz > r*r+1 {
+					continue
+				}
+				if b := w.getLocal(x+dx, top+dy, z+dz); b == Air || b == TallGrass || b == Flower {
+					set(x+dx, top+dy, z+dz, CherryLeaves)
+				}
+			}
+		}
+	}
+}
+
 // isLog and leafFor describe trunks and the leaves they regrow.
-func isLog(b Block) bool { return b == Log || b == BirchLog || b == EucLog }
+func isLog(b Block) bool {
+	return b == Log || b == BirchLog || b == EucLog || b == AcaciaLog || b == PalmLog || b == CherryLog
+}
 
 func (w *World) leafFor(lx, y, lz int, log Block) Block {
-	if log == EucLog {
+	switch log {
+	case EucLog:
 		return EucLeaves
+	case AcaciaLog:
+		return AcaciaLeaves
+	case PalmLog:
+		return PalmLeaves
+	case CherryLog:
+		return CherryLeaves
 	}
 	// Spruce and oak share the log: copy whatever leaves the tree already has.
 	for _, d := range [][3]int{{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0, 1, 0}, {1, 1, 0}, {-1, 1, 0}, {0, 1, 1}, {0, 1, -1}} {
@@ -1496,12 +1823,23 @@ func (w *World) RegrowTrees(slice, slices, limit int) (grown int) {
 // GrowTree turns a sapling at world (x, y, z) into a tree if there is room.
 func (w *World) GrowTree(x, y, z int) bool {
 	lx, lz := x-originX, z-originZ
+	sapling := w.getLocal(lx, y, lz)
 	for yy := y; yy < y+6; yy++ {
-		if b := w.getLocal(lx, yy, lz); b != Air && b != Sapling && b != Leaves && b != TallGrass {
+		if b := w.getLocal(lx, yy, lz); b != Air && b != sapling && !b.IsLeaves() && b != TallGrass {
 			return false
 		}
 	}
-	w.placeTree(lx, y, lz, func(x, y, z int, b Block) { w.Set(x+originX, y, z+originZ, b) })
+	set := func(x, y, z int, b Block) { w.Set(x+originX, y, z+originZ, b) }
+	switch sapling {
+	case AcaciaSapling:
+		w.placeAcacia(lx, y, lz, set)
+	case PalmSapling:
+		w.placePalm(lx, y, lz, set)
+	case CherrySapling:
+		w.placeCherry(lx, y, lz, set)
+	default:
+		w.placeTree(lx, y, lz, set)
+	}
 	return true
 }
 
@@ -1825,7 +2163,7 @@ func wobbleCorner(p *[3]float32) {
 // biomeTintCode returns the vertex-alpha code the shader turns into a biome
 // colour for foliage faces, or 255 for faces that keep their texture colour.
 func biomeTintCode(b Block, f *faceDef, biome Biome) uint8 {
-	foliage := b == Leaves || b == SpruceLeaves || b == EucLeaves || b == FruitLeaves || b == TallGrass || b == Sapling || (b == Grass && f.n[1] > 0)
+	foliage := b == Leaves || b == SpruceLeaves || b == EucLeaves || b == FruitLeaves || b == AcaciaLeaves || b == TallGrass || b == Sapling || (b == Grass && f.n[1] > 0)
 	if !foliage {
 		return 255
 	}
@@ -1949,8 +2287,13 @@ func (w *World) buildChunk(ci, cj int, c *chunk) {
 					// Small box lit by its own cell, no culling or occlusion.
 					l := cornerLight{float32(w.sunLocal(lx, y, lz)) / 15, float32(w.blockLocal(lx, y, lz)) / 15}
 					box := b.TinyBox()
-					if b == Ladder {
+					switch {
+					case b == Ladder:
 						box = w.ladderBox(lx, y, lz)
+					case isDoor(b):
+						box = w.doorBox(lx, y, lz, b)
+					case b == TrapdoorOpen:
+						box = w.openTrapdoorBox(lx, y, lz)
 					}
 					if info.Cross {
 						c.opaque[y/sectionH].emitCross(b, wx, float32(y), wz, box[1][1], l, biomeTintCode(b, &faces[0], w.Biome[lz*worldW+lx]))
@@ -1980,7 +2323,7 @@ func (w *World) buildChunk(ci, cj int, c *chunk) {
 					f := &faces[fi]
 					nx, ny, nz := lx+f.n[0], y+f.n[1], lz+f.n[2]
 					nb := w.getLocal(nx, ny, nz)
-					leafy := b == Leaves || b == SpruceLeaves || b == EucLeaves || b == FruitLeaves
+					leafy := b.IsLeaves()
 					if (nb.Opaque() && !(leafy && nb == b)) || (trans && nb == b) {
 						continue
 					}
@@ -2495,13 +2838,46 @@ func (w *World) boxSolid(x0, y0, z0, x1, y1, z1 float32) bool {
 	for y := floorI(y0); y <= floorI(y1-eps); y++ {
 		for z := floorI(z0); z <= floorI(z1-eps); z++ {
 			for x := floorI(x0); x <= floorI(x1-eps); x++ {
-				if w.Solid(x, y, z) {
+				if top := w.cellTop(x, y, z); top > 0 && y0 < float32(y)+top {
 					return true
 				}
 			}
 		}
 	}
 	return false
+}
+
+// cellTop is how high the solid part of a cell reaches above its floor: 0 for
+// an empty cell, 1 for a block, less for a closed trapdoor and for the half
+// block of air above a fence post.
+func (w *World) cellTop(x, y, z int) float32 {
+	if y < 0 {
+		return 1
+	}
+	if y >= worldH {
+		return 0
+	}
+	switch b := w.Get(x, y, z); {
+	case b == TrapdoorClosed:
+		return trapdoorH
+	case blocks[b].Solid:
+		return 1
+	case y > 0 && w.Get(x, y-1, z) == Fence:
+		return 0.5
+	}
+	return 0
+}
+
+// rowTop is the highest cellTop among the cells a box footprint covers in row y.
+func (w *World) rowTop(x0, z0, x1, z1 float32, y int) float32 {
+	const eps = 1e-4
+	var top float32
+	for z := floorI(z0); z <= floorI(z1-eps); z++ {
+		for x := floorI(x0); x <= floorI(x1-eps); x++ {
+			top = max(top, w.cellTop(x, y, z))
+		}
+	}
+	return top
 }
 
 // HasGround reports whether a box with feet at pos rests on something solid.
@@ -2526,7 +2902,7 @@ func (w *World) MoveBox(pos rl.Vector3, hw, h float32, delta rl.Vector3, stepUp 
 		if delta.Y < 0 {
 			for y := floorI(oldY); y >= floorI(pos.Y); y-- {
 				if w.boxSolid(pos.X-hw, float32(y), pos.Z-hw, pos.X+hw, float32(y+1), pos.Z+hw) {
-					pos.Y = float32(y + 1)
+					pos.Y = float32(y) + w.rowTop(pos.X-hw, pos.Z-hw, pos.X+hw, pos.Z+hw, y)
 					break
 				}
 			}
@@ -2560,8 +2936,12 @@ func (w *World) MoveBox(pos rl.Vector3, hw, h float32, delta rl.Vector3, stepUp 
 			return
 		}
 		if stepUp && res.Ground {
+			// Climb onto whatever blocks the way: a full block, or just a trapdoor's slab.
 			up := try
-			up.Y += 1
+			up.Y = float32(floorI(try.Y)) + w.rowTop(try.X-hw, try.Z-hw, try.X+hw, try.Z+hw, floorI(try.Y))
+			if up.Y <= try.Y {
+				up.Y = try.Y + 1
+			}
 			if !solid(up) {
 				pos = up
 				return
@@ -2701,7 +3081,7 @@ func (w *World) RandomFreePoint(from rl.Vector3, minDist float32) rl.Vector3 {
 		if h != w.Height[lz*worldW+lx] || h <= seaLevel {
 			continue // under water or under a canopy
 		}
-		if g := w.getLocal(lx, h-1, lz); g == Leaves || g == SpruceLeaves || g == EucLeaves || g == FruitLeaves || g == Log || g == BirchLog || g == EucLog {
+		if g := w.getLocal(lx, h-1, lz); g.IsLeaves() || isLog(g) {
 			continue // on top of a tree
 		}
 		p := rl.NewVector3(float32(lx+originX)+0.5, float32(h), float32(lz+originZ)+0.5)

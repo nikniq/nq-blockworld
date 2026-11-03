@@ -13,8 +13,10 @@ block textures and sound effects are generated at startup.
   everything scales with the area: villages, dungeons, mineshafts, ravines, herds and ores.
 - A world is generated every run: hills, a mountain band, beaches, a sea,
   winding caves and ore veins (coal, iron, gold, diamond), plus stone-brick ruins for cover.
-- **Biomes**: plains with tall grass and flowers, oak and birch forests, deserts with cacti (they sting),
-  snowy taiga with tall spruces, and red-sand outback with pale eucalyptus and dead bushes.
+- **Biomes**: plains with tall grass, flowers and flat-topped acacias, oak, birch and pink cherry
+  forests, deserts with cacti (they sting) and palms leaning over the beaches, snowy taiga with tall
+  spruces, and red-sand outback with pale eucalyptus and dead bushes. Every tree kind drops its own
+  sapling from its leaves, and palms drop coconuts; all the logs make planks.
 - **Australian wildlife**: kangaroos hop across the outback and kick when provoked, emus sprint off,
   wombats trundle about, koalas doze up in the trees, platypuses paddle in rivers and lakes, and
   crocodiles lie on warm shores and charge anyone who wanders close. A kookaburra laughs at dawn.
@@ -119,7 +121,13 @@ block textures and sound effects are generated at startup.
 - **Chests**: eight planks. Right click to open a two-column screen, click a row to move a whole stack
   between your inventory and the chest (Shift moves eight), and break the chest to spill it. When you
   die your blocks and ammo go into a chest at the spot, so nothing is lost to the grass.
-- **Doors**: four planks make a door. Right click opens and closes it; closed doors stop hostiles and arrows.
+- **Doors**: four planks make a door. Doors are two blocks tall, with panels below and a four-pane
+  window above, and hang themselves in the doorway: closed, a door spans the gap between its walls;
+  open, it swings back flat against the hinge side. Right click either half to open or close it; closed
+  doors stop hostiles and arrows. Breaking either half takes the whole door down.
+- **Trapdoors**: three planks make two. A trapdoor is a thin hatch you place in a floor or a wall and
+  stand on at its real height; right click and it stands up against the nearest wall, opening the way
+  down a ladder or a drop into the mine. Closed, it keeps mobs from falling in after you.
 - **Wandering trader**: a robed visitor turns up every couple of days and wanders off again. Right click to
   trade: gold ore for rifle ammo, iron for diamonds, wool for bread, coal for TNT, and more.
 - **Abandoned mineshafts**: timbered corridors with plank floors, torches and loot crates run through the
@@ -134,6 +142,13 @@ block textures and sound effects are generated at startup.
   The epicentre pulses on the map during the quake and the fault line stays marked afterwards.
 - **Living trees**: damaged trees regrow their leaves, canopies slowly fill out, and oak leaves next to the
   trunk ripen into apple-bearing leaves (red dots). Right click them to pick apples.
+- **Crops**: wheat seeds, carrots and beetroot go into grass or dirt with a right click and ripen in the
+  sun; ripe carrots and beetroot are food and seed in one, and a good harvest gives extra. Pumpkin and
+  melon seeds grow a vine that sets a pumpkin or a watermelon on the soil beside it and keeps bearing.
+  Pumpkins bake into pie with wheat, watermelons break into slices, and both craft back into seeds.
+  Wild carrot, beetroot and pumpkin patches grow on the plains, pumpkins under the forest trees and
+  watermelons in the swamp, and the wandering trader sells seeds and vegetables for wheat and bread.
+  Horses take carrots as happily as apples.
 - **Storms**: heavy rain brings lightning: a flash, a bolt, and thunder that rolls in after a delay.
 - **Animals**: pigs, cows and sheep graze on the grass and flee when hurt. They drop raw meat;
   hold it and right click to eat for 30 health.

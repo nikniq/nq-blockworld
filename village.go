@@ -143,8 +143,7 @@ func (w *World) buildHouse(x, z, base, fx, fz int) {
 	}
 	// Door in the middle of the front wall, with a torch beside it outside.
 	dx, dz := fx*hw, fz*hd
-	w.setLocal(x+dx, base, z+dz, DoorClosed)
-	w.setLocal(x+dx, base+1, z+dz, Air)
+	w.setDoorLocal(x+dx, base, z+dz)
 	w.setLocal(x+dx+fx, base, z+dz+fz, Air)
 	w.setLocal(x+dx+fx+fz, base, z+dz+fz+fx, Torch)
 	// Bed against the back wall, torch inside, sometimes a crate.

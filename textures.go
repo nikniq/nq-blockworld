@@ -71,6 +71,21 @@ const (
 	PatFence
 	PatBucket
 	PatWaterBucket
+	PatDoorHigh
+	PatTrapdoor
+	PatPalmSide
+	PatCoconut
+	PatCarrot
+	PatCarrotCrop
+	PatBeet
+	PatBeetCrop
+	PatStem
+	PatPumpkin
+	PatPumpkinTop
+	PatMelon
+	PatMelonTop
+	PatMelonSlice
+	PatPie
 )
 
 const (
@@ -542,16 +557,7 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 		}
 		return rl.NewColor(0, 0, 0, 0)
 	case PatDoor:
-		if x == 0 || x == 15 || y == 0 || y == 15 || y == 7 || x == 7 {
-			return mul(base, 0.6+0.1*n) // frame and panel edges
-		}
-		if y >= 2 && y <= 5 && x >= 9 && x <= 13 {
-			return rl.NewColor(190, 225, 240, 255) // window
-		}
-		if y == 9 && x == 2 {
-			return rl.NewColor(230, 200, 60, 255) // handle
-		}
-		return mul(base, 0.85+0.3*hash2(x/3, y, seed))
+		return texelPixel(p, base, info, x, y, seed)
 	case PatBeacon:
 		dx, dy := x-7, y-7
 		if dx*dx+dy*dy < 12 {
@@ -618,7 +624,8 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 			return mul(blocks[Torch].Top, 0.85+0.3*n)
 		}
 		return mul(base, 0.8+0.3*n)
-	case PatFence, PatBucket, PatWaterBucket:
+	case PatFence, PatBucket, PatWaterBucket, PatDoorHigh, PatTrapdoor, PatPalmSide, PatCoconut, PatCarrot, PatCarrotCrop,
+		PatBeet, PatBeetCrop, PatStem, PatPumpkin, PatPumpkinTop, PatMelon, PatMelonTop, PatMelonSlice, PatPie:
 		return texelPixel(p, base, info, x, y, seed)
 	default:
 		return paint(base, fx, fy, seed, 0.3, false)
@@ -907,16 +914,171 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 		}
 		return rl.NewColor(0, 0, 0, 0)
 	case PatDoor:
-		if x == 0 || x == 16-1 || y == 0 || y == 16-1 || y == 7 || x == 7 {
-			return mul(base, 0.6+0.1*n) // frame and panel edges
+		// Lower half of a door: a frame around two raised panels and a brass handle.
+		switch {
+		case x == 0 || x == 15 || y == 15:
+			return mul(base, 0.55+0.1*n) // stiles and sill
+		case x == 7 || x == 8:
+			return mul(base, 0.65+0.1*n) // centre stile
+		case y == 7 || y == 8:
+			return mul(base, 0.65+0.1*n) // rail between the panels
+		case (x == 2 || x == 13 || x == 5 || x == 10) && y >= 2 && y <= 13 && y != 7 && y != 8,
+			(y == 2 || y == 13) && (x >= 2 && x <= 5 || x >= 10 && x <= 13):
+			return mul(base, 0.8+0.1*n) // panel mouldings
+		case x >= 12 && x <= 13 && y >= 3 && y <= 4:
+			return rl.NewColor(220, 180, 70, 255) // handle
 		}
-		if y >= 2 && y <= 5 && x >= 9 && x <= 13 {
-			return rl.NewColor(190, 225, 240, 255) // window
+		return mul(base, 0.9+0.2*hash2(x/4, y, seed))
+	case PatDoorHigh:
+		// Upper half: a four-pane window in the frame.
+		switch {
+		case x == 0 || x == 15 || y == 0:
+			return mul(base, 0.55+0.1*n) // stiles and head
+		case y >= 3 && y <= 12 && x >= 3 && x <= 12:
+			if x == 7 || x == 8 || y == 7 || y == 8 {
+				return mul(base, 0.6) // muntins
+			}
+			if (x+y)%7 == 0 {
+				return rl.NewColor(225, 240, 250, 255) // glints
+			}
+			return rl.NewColor(170, 210, 235, 255) // glass
+		case y >= 2 && y <= 13 && x >= 2 && x <= 13:
+			return mul(base, 0.7+0.1*n) // window moulding
 		}
-		if y == 9 && x == 2 {
-			return rl.NewColor(230, 200, 60, 255) // handle
+		return mul(base, 0.9+0.2*hash2(x/4, y, seed))
+	case PatTrapdoor:
+		// Boards with two cross battens and an iron ring.
+		if x == 0 || x == 15 || y == 0 || y == 15 {
+			return mul(base, 0.6+0.1*n)
 		}
-		return mul(base, 0.85+0.3*hash2(x/3, y, seed))
+		if y == 3 || y == 4 || y == 11 || y == 12 {
+			return mul(base, 0.7+0.15*n) // battens
+		}
+		if dx, dy := x-7, y-7; dx*dx+dy*dy >= 4 && dx*dx+dy*dy <= 7 && y >= 5 && y <= 10 {
+			return rl.NewColor(70, 70, 76, 255) // ring
+		}
+		if x%4 == 0 {
+			return mul(base, 0.78+0.1*n) // gaps between boards
+		}
+		return mul(base, 0.9+0.2*hash2(x/4, y, seed))
+	case PatPalmSide:
+		// Ringed trunk: the scars of old fronds.
+		if y%4 == 0 && (x+y/4)%3 != 0 {
+			return mul(base, 0.6+0.15*n)
+		}
+		return mul(base, 0.85+0.3*n)
+	case PatCoconut:
+		if dx, dy := float32(x)-7.5, float32(y)-8; dx*dx+dy*dy < 36 {
+			if (x == 6 || x == 9) && y == 5 || x == 8 && y == 4 {
+				return mul(base, 0.5) // the three eyes
+			}
+			return mul(base, 0.75+0.45*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatCarrot:
+		// A tapered orange root with a green top.
+		if y < 4 && x >= 6 && x <= 9 && (x+y)%2 == 0 {
+			return mul(rl.NewColor(80, 160, 60, 255), 0.85+0.3*n)
+		}
+		if y >= 4 && abs(x-7) <= 3-(y-4)/4 {
+			return mul(base, 0.8+0.35*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatBeet:
+		// A round dark red bulb with leaves on top.
+		if y < 5 && (x == 7 || x == 8 || (y == 2 && x >= 5 && x <= 10)) {
+			return mul(rl.NewColor(80, 140, 60, 255), 0.85+0.3*n)
+		}
+		if dx, dy := float32(x)-7.5, float32(y)-9.5; dx*dx+dy*dy*0.8 < 22 {
+			return mul(base, 0.75+0.4*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatCarrotCrop, PatBeetCrop:
+		// Leafy tops with the root showing at the soil line.
+		stalk := (x*5+seed)%4 == 1
+		if stalk && y >= 5 {
+			if y >= 13 {
+				if p == PatCarrotCrop {
+					return mul(rl.NewColor(235, 130, 40, 255), 0.85+0.3*n)
+				}
+				return mul(rl.NewColor(150, 30, 60, 255), 0.85+0.3*n)
+			}
+			return mul(base, 0.75+0.4*n)
+		}
+		if stalk || (x*3+seed)%4 == 2 {
+			if y >= 7 && y < 13 && (x+y)%3 == 0 {
+				return mul(base, 0.7+0.3*n) // side leaves
+			}
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatStem:
+		// A curling vine with broad leaves.
+		if x == 7 && y >= 4 || y == 4+x/3 && x > 7 && x < 14 || y == 12 && x < 7 && x > 2 {
+			return mul(base, 0.7+0.3*n)
+		}
+		if (x-4)*(x-4)+(y-9)*(y-9) < 5 || (x-11)*(x-11)+(y-7)*(y-7) < 5 {
+			return mul(base, 0.9+0.3*n) // leaves
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatPumpkin:
+		// Ribbed sides.
+		v := 0.85 + 0.3*n
+		if x%4 == 0 {
+			v *= 0.72
+		} else if x%4 == 2 {
+			v *= 1.08
+		}
+		return mul(base, v)
+	case PatPumpkinTop:
+		if dx, dy := x-7, y-7; dx*dx+dy*dy <= 2 {
+			return mul(rl.NewColor(90, 120, 50, 255), 0.85+0.3*n) // stalk
+		}
+		d := (abs(x-7) + abs(y-7)) % 5
+		v := 0.85 + 0.3*n
+		if d == 0 {
+			v *= 0.75
+		}
+		return mul(base, v)
+	case PatMelon:
+		// Dark stripes winding down a pale green rind.
+		if (x+y/5)%4 == 0 || (x+y/5)%4 == 1 && n < 0.3 {
+			return mul(rl.NewColor(40, 90, 40, 255), 0.85+0.3*n)
+		}
+		return mul(base, 0.9+0.3*n)
+	case PatMelonTop:
+		if (abs(x-7)+abs(y-7))%4 == 0 {
+			return mul(rl.NewColor(40, 90, 40, 255), 0.85+0.3*n)
+		}
+		return mul(base, 0.9+0.3*n)
+	case PatMelonSlice:
+		// A wedge: red flesh with seeds, green rind along the curve.
+		dx, dy := float32(x)-7.5, float32(y)-2
+		d := dx*dx + dy*dy
+		if y >= 2 && d < 110 && float32(abs(x-7)) < float32(y)*0.9 {
+			if d > 80 {
+				return mul(rl.NewColor(70, 150, 60, 255), 0.85+0.3*n) // rind
+			}
+			if d > 64 {
+				return rl.NewColor(230, 240, 220, 255) // pith
+			}
+			if (x*7+y*3)%11 == 0 {
+				return rl.NewColor(40, 30, 30, 255) // seeds
+			}
+			return mul(base, 0.85+0.3*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatPie:
+		dx, dy := float32(x)-7.5, float32(y)-9
+		if dx*dx/49+dy*dy/20 < 1 {
+			if dy < -2 {
+				return mul(rl.NewColor(200, 130, 50, 255), 0.9+0.2*n) // filling
+			}
+			if (x+y)%5 == 0 {
+				return mul(base, 0.7) // crust pattern
+			}
+			return mul(base, 0.85+0.3*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
 	case PatBeacon:
 		dx, dy := x-7, y-7
 		if dx*dx+dy*dy < 12 {

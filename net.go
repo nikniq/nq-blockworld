@@ -490,12 +490,18 @@ func (g *Game) hostHandle(from uint32, m *Msg) {
 		pl := m.Place
 		if r, ok := g.Remotes[from]; ok && w.InBounds(pl.X, pl.Y, pl.Z) && withinReach(r.Pos, pl.X, pl.Y, pl.Z) {
 			t := w.Get(pl.X, pl.Y, pl.Z)
-			door := (t == DoorClosed || t == DoorOpen) && (pl.B == DoorClosed || pl.B == DoorOpen)
+			door := isDoor(t) && (pl.B == DoorClosed || pl.B == DoorOpen) && w.DoorBottom(pl.X, pl.Y, pl.Z) == pl.Y
+			trapdoor := (t == TrapdoorClosed || t == TrapdoorOpen) && (pl.B == TrapdoorClosed || pl.B == TrapdoorOpen)
+			crop := pl.B == CarrotGrowing || pl.B == BeetrootGrowing // planted from food in hand
 			if t == FruitLeaves && pl.B == Leaves {
 				w.Set(pl.X, pl.Y, pl.Z, Leaves)
-			} else if door && !(pl.B == DoorClosed && g.blockOccupied(pl.X, pl.Y, pl.Z)) {
+			} else if door && !(pl.B == DoorClosed && (g.blockOccupied(pl.X, pl.Y, pl.Z) || g.blockOccupied(pl.X, pl.Y+1, pl.Z))) {
+				w.SetDoor(pl.X, pl.Y, pl.Z, pl.B == DoorOpen)
+			} else if trapdoor {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
-			} else if pl.B.Placeable() && (t == Air || (t.Liquid() && !blocks[pl.B].Tiny)) && !(blocks[pl.B].Solid && g.blockOccupied(pl.X, pl.Y, pl.Z)) {
+			} else if pl.B == DoorClosed && t == Air && w.Get(pl.X, pl.Y+1, pl.Z) == Air && !g.blockOccupied(pl.X, pl.Y, pl.Z) && !g.blockOccupied(pl.X, pl.Y+1, pl.Z) {
+				w.SetDoor(pl.X, pl.Y, pl.Z, false)
+			} else if (pl.B.Placeable() || crop) && (t == Air || (t.Liquid() && !blocks[pl.B].Tiny)) && !(blocks[pl.B].Solid && g.blockOccupied(pl.X, pl.Y, pl.Z)) {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
 			} else if (pl.B == Water && (t == Air || t == Lava)) || (pl.B == Air && t == Water) {
 				g.applyBucket(pl.X, pl.Y, pl.Z, pl.B) // a bucket poured or filled

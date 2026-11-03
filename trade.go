@@ -24,6 +24,10 @@ var trades = []Trade{
 	{Give: GoldOre, GiveN: 1, Get: Torch, GetN: 12},
 	{Give: DiamondOre, GiveN: 1, Get: ArrowItem, GetN: 24},
 	{Give: WheatItem, GiveN: 6, Get: Seeds, GetN: 12},
+	{Give: WheatItem, GiveN: 4, Get: Carrot, GetN: 5},
+	{Give: WheatItem, GiveN: 4, Get: Beetroot, GetN: 5},
+	{Give: Bread, GiveN: 2, Get: PumpkinSeeds, GetN: 3},
+	{Give: Bread, GiveN: 2, Get: MelonSeeds, GetN: 3},
 	{Give: Amethyst, GiveN: 3, Get: DiamondOre, GetN: 1},
 }
 

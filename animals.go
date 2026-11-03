@@ -494,7 +494,7 @@ func (g *Game) tameHorse(a *Animal) {
 		g.mount(a)
 		return
 	}
-	if !(p.Held.Kind == ItemFood && (p.Held.Block == Apple || p.Held.Block == Bread)) && !(p.Held.Kind == ItemBlock && p.Held.Block == WheatItem) && p.Held.Block != WheatItem {
+	if !(p.Held.Kind == ItemFood && (p.Held.Block == Apple || p.Held.Block == Bread || p.Held.Block == Carrot)) && !(p.Held.Kind == ItemBlock && p.Held.Block == WheatItem) && p.Held.Block != WheatItem {
 		g.say("The horse snorts. Offer it wheat, bread or an apple.", 1.8)
 		return
 	}

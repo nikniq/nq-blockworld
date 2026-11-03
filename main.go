@@ -838,7 +838,20 @@ func (g *Game) settle(x, y, z int) {
 // updateBuilder handles mining (hold left click) and placing (right click).
 func (g *Game) updateBuilder(dt float32) {
 	p, w := g.Player, g.World
+	p.Aim = w.RayCastAny(p.Eye(), p.Forward(), reachDist)
 	if usePressed() && p.Held.Kind == ItemFood && p.Inv[p.Held.Block] > 0 {
+		// Carrots and beetroot go in the ground when aimed at soil; otherwise food is eaten.
+		if crop := p.Held.Block.Plants(); crop != Air && p.Aim.Hit && p.Aim.NY == 1 {
+			a := p.Aim
+			if soil := w.Get(a.X, a.Y, a.Z); (soil == Grass || soil == Dirt) && w.Get(a.X, a.Y+1, a.Z) == Air {
+				g.placeAt(a.X, a.Y+1, a.Z, crop)
+				p.Inv[p.Held.Block]--
+				p.Swing = 1
+				g.Audio.Play(g.Audio.Place, 0.6)
+				p.EnsureHeld()
+				return
+			}
+		}
 		if p.Hunger < maxHunger-0.5 || p.HP < maxHealth {
 			p.Inv[p.Held.Block]--
 			food := blocks[p.Held.Block].Food
@@ -851,7 +864,6 @@ func (g *Game) updateBuilder(dt float32) {
 			g.unlock(AchEat)
 		}
 	}
-	p.Aim = w.RayCastAny(p.Eye(), p.Forward(), reachDist)
 	if !p.Aim.Hit || !w.InBounds(p.Aim.X, p.Aim.Y, p.Aim.Z) {
 		p.Aim.Hit = false
 		p.Mining = false
@@ -926,22 +938,26 @@ func (g *Game) updateBuilder(dt float32) {
 		return
 	}
 	if usePressed() {
-		if b := w.Get(a.X, a.Y, a.Z); b == DoorClosed || b == DoorOpen {
-			nb := DoorOpen
-			if b == DoorOpen {
-				nb = DoorClosed
-			}
-			if nb == DoorClosed && g.blockOccupied(a.X, a.Y, a.Z) {
+		if b := w.Get(a.X, a.Y, a.Z); isDoor(b) {
+			y := w.DoorBottom(a.X, a.Y, a.Z)
+			open := b == DoorClosed || b == DoorTop // it is closed now, so open it
+			if !open && (g.blockOccupied(a.X, y, a.Z) || g.blockOccupied(a.X, y+1, a.Z)) {
 				return
 			}
-			if g.isClient() {
-				g.sendToHost(&Msg{Place: &struct {
-					X, Y, Z int
-					B       Block
-				}{a.X, a.Y, a.Z, nb}})
-			} else {
-				w.Set(a.X, a.Y, a.Z, nb)
+			nb := DoorClosed
+			if open {
+				nb = DoorOpen
 			}
+			g.placeAt(a.X, y, a.Z, nb)
+			g.Audio.Play(g.Audio.Place, 0.6)
+			return
+		}
+		if b := w.Get(a.X, a.Y, a.Z); b == TrapdoorClosed || b == TrapdoorOpen {
+			nb := TrapdoorOpen
+			if b == TrapdoorOpen {
+				nb = TrapdoorClosed
+			}
+			g.placeAt(a.X, a.Y, a.Z, nb)
 			g.Audio.Play(g.Audio.Place, 0.6)
 			return
 		}
@@ -960,24 +976,20 @@ func (g *Game) updateBuilder(dt float32) {
 		target := w.Get(x, y, z)
 		held := &blocks[p.Held.Block]
 		free := target == Air || (target.Liquid() && !held.Tiny)
-		if p.Held.Block == Sapling || p.Held.Block == Seeds {
+		if p.Held.Block.NeedsSoil() {
 			below := w.Get(x, y-1, z)
 			free = free && (below == Grass || below == Dirt)
+		}
+		if p.Held.Block == DoorClosed {
+			// Doors are two blocks tall.
+			free = free && w.Get(x, y+1, z) == Air && !g.blockOccupied(x, y+1, z)
 		}
 		if p.Held.Block == Ladder {
 			// Ladders hang on a wall.
 			free = free && (w.Get(x+1, y, z).Opaque() || w.Get(x-1, y, z).Opaque() || w.Get(x, y, z+1).Opaque() || w.Get(x, y, z-1).Opaque())
 		}
 		if w.InBounds(x, y, z) && free && !(held.Solid && g.blockOccupied(x, y, z)) {
-			if g.isClient() {
-				g.sendToHost(&Msg{Place: &struct {
-					X, Y, Z int
-					B       Block
-				}{x, y, z, p.Held.Block}})
-			} else {
-				w.Set(x, y, z, p.Held.Block)
-				g.sendFx(Fx{Kind: FxPlace, Pos: rl.NewVector3(float32(x), float32(y), float32(z))})
-			}
+			g.placeAt(x, y, z, p.Held.Block)
 			if !settings.Creative {
 				p.Inv[p.Held.Block]--
 			}
@@ -989,11 +1001,46 @@ func (g *Game) updateBuilder(dt float32) {
 	}
 }
 
+// placeAt writes a block the player placed or toggled: directly when hosting
+// or alone, through the host when joined. Doors are written as both halves.
+func (g *Game) placeAt(x, y, z int, b Block) {
+	if g.isClient() {
+		g.sendToHost(&Msg{Place: &struct {
+			X, Y, Z int
+			B       Block
+		}{x, y, z, b}})
+		return
+	}
+	g.applyPlace(x, y, z, b)
+	g.sendFx(Fx{Kind: FxPlace, Pos: rl.NewVector3(float32(x), float32(y), float32(z))})
+}
+
+// applyPlace is the world write behind placeAt.
+func (g *Game) applyPlace(x, y, z int, b Block) {
+	switch b {
+	case DoorClosed, DoorOpen:
+		g.World.SetDoor(x, y, z, b == DoorOpen)
+	default:
+		g.World.Set(x, y, z, b)
+	}
+}
+
 // breakBlock removes a block, drops its item and lets sand above it fall.
 func (g *Game) breakBlock(x, y, z int) {
 	b := g.World.Get(x, y, z)
 	if b == Air {
 		return
+	}
+	if isDoor(b) {
+		// Both halves go, and the top half drops the door if it was the one broken.
+		if yb := g.World.DoorBottom(x, y, z); yb == y {
+			g.World.Set(x, y+1, z, Air)
+		} else {
+			g.World.Set(x, yb, z, Air)
+			if !settings.Creative {
+				g.spawnDrop(rl.NewVector3(float32(x)+0.5, float32(y)+0.5, float32(z)+0.5), DoorClosed, 0)
+			}
+		}
 	}
 	if b == ChestBlock {
 		g.breakChest(x, y, z)
@@ -1054,6 +1101,30 @@ func (g *Game) breakBlock(x, y, z int) {
 	}
 	if b == Wheat && rand.Float32() < 0.6 {
 		g.spawnDrop(centre, Seeds, 0) // extra seeds to replant
+	}
+	switch b {
+	case CarrotRipe, BeetrootRipe:
+		for i := rand.Intn(3); i > 0; i-- {
+			g.spawnDrop(centre, info.Drops, 0) // a good harvest
+		}
+	case Melon:
+		for i := 2 + rand.Intn(3); i > 0; i-- {
+			g.spawnDrop(centre, MelonSlice, 0)
+		}
+	case AcaciaLeaves:
+		if rand.Float32() < 0.15 {
+			g.spawnDrop(centre, AcaciaSapling, 0)
+		}
+	case CherryLeaves:
+		if rand.Float32() < 0.15 {
+			g.spawnDrop(centre, CherrySapling, 0)
+		}
+	case PalmLeaves:
+		if r := rand.Float32(); r < 0.12 {
+			g.spawnDrop(centre, PalmSapling, 0)
+		} else if r < 0.3 {
+			g.spawnDrop(centre, Coconut, 0)
+		}
 	}
 	if !g.Headless && !g.isClient() {
 		g.MinedCount++
@@ -1296,21 +1367,33 @@ func (g *Game) growSaplings(dt float32) {
 	g.GrowCD = 3
 	w := g.World
 	for i, b := range w.Blocks {
-		if b != Sapling && b != Seeds && b != WheatGrowing {
+		sapling := b == Sapling || b == AcaciaSapling || b == PalmSapling || b == CherrySapling
+		vine := b == PumpkinStem || b == MelonStem
+		if !sapling && !vine && cropNext(b) == Air {
 			continue
 		}
 		x := i % worldW
 		z := (i / worldW) % worldD
 		y := i / (worldW * worldD)
 		wx, wz := x+originX, z+originZ
-		switch b {
-		case Seeds, WheatGrowing:
+		if next := cropNext(b); next != Air {
 			if w.sunLocal(x, y, z) >= 8 && rand.Float32() < 0.08 {
-				next := WheatGrowing
-				if b == WheatGrowing {
-					next = Wheat
-				}
 				w.Set(wx, y, wz, next)
+			}
+			continue
+		}
+		if vine {
+			// A grown vine sets fruit on a free patch of soil beside it, and keeps bearing.
+			if w.sunLocal(x, y, z) >= 8 && rand.Float32() < 0.03 {
+				fruit := Pumpkin
+				if b == MelonStem {
+					fruit = Melon
+				}
+				d := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}[rand.Intn(4)]
+				fx, fz := wx+d[0], wz+d[1]
+				if below := w.Get(fx, y-1, fz); w.Get(fx, y, fz) == Air && (below == Grass || below == Dirt) && !g.blockOccupied(fx, y, fz) {
+					w.Set(fx, y, fz, fruit)
+				}
 			}
 			continue
 		}
@@ -2882,6 +2965,8 @@ func (g *Game) drawHelp(sw, sh int32) {
 		"Wolves: feed one meat or fish twice to tame it. Cats: a fish tames one; right click to sit or follow. Fishing rod: planks and wool.",
 		"Horses (plains): feed wheat, bread or apples twice, then right click to ride; SPACE jumps, CTRL gallops, SHIFT dismounts. Boat: 5 planks.",
 		"Fences (3 planks): a block and a half tall, nothing jumps them. Bucket (3 iron, coal): right click water to scoop it, right click again to pour; water quenches lava to cobblestone.",
+		"Doors are two blocks tall and hang in a doorway; trapdoors (3 planks make 2) are hatches you can stand on, right click to open. Acacia, palm and cherry trees drop their own saplings; palms drop coconuts.",
+		"Crops: plant wheat seeds, carrots or beetroot on grass or dirt (right click), pumpkin and melon seeds grow vines that set fruit beside them. Pumpkin and wheat bake a pie. Wild patches grow on the plains, melons in the swamp.",
 		"Outback: red sand, eucalyptus, kangaroos, emus, wombats. Koalas and platypuses are protected. Mind the crocodiles.",
 		"The deep: below the dark stone lie vast caverns, lakes, ravines, glowshrooms, amethyst, diamonds and cave spiders.",
 		"Modes (O on the menu, G in pause): Survival, Creative, Zombie (endless night, growing hordes), Battle (factions at war with you).",
@@ -3542,7 +3627,7 @@ func (g *Game) scriptedShots(frame int) bool {
 		{
 			d := rl.Vector3Add(g.Player.Pos, rl.Vector3Scale(g.Player.FlatForward(), 3))
 			d.X += 2
-			g.World.Set(floorI(d.X), floorI(g.Player.Pos.Y), floorI(d.Z), DoorClosed)
+			g.World.SetDoor(floorI(d.X), floorI(g.Player.Pos.Y), floorI(d.Z), false)
 			t := NewAnimal(rl.Vector3Add(g.Player.Pos, rl.Vector3Scale(g.Player.FlatForward(), 3.5)), AnimalTrader)
 			t.Heading = rl.Vector3Scale(g.Player.FlatForward(), -1)
 			t.WanderT = 99

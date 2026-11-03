@@ -1570,3 +1570,122 @@ func TestFence(t *testing.T) {
 		t.Fatalf("ray should stop at the fence: %+v", hit)
 	}
 }
+
+// Doors are two blocks tall, open and close as one, and break as one.
+func TestDoors(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	x, z := floorI(g.Spawn.X)+5, floorI(g.Spawn.Z)+5
+	y := w.SurfaceY(x, z)
+	w.Set(x-1, y, z, Planks)
+	w.Set(x+1, y, z, Planks)
+	g.applyPlace(x, y, z, DoorClosed)
+	if w.Get(x, y, z) != DoorClosed || w.Get(x, y+1, z) != DoorTop {
+		t.Fatal("placing a door should write both halves")
+	}
+	if !w.Solid(x, y, z) || !w.Solid(x, y+1, z) {
+		t.Fatal("a closed door blocks both cells")
+	}
+	if box := w.doorBox(x-originX, y, z-originZ, DoorClosed); box[1][0] != 1 || box[1][2] >= 1 {
+		t.Fatalf("a door between walls on X should span X: %v", box)
+	}
+	g.applyPlace(x, w.DoorBottom(x, y+1, z), z, DoorOpen)
+	if w.Get(x, y, z) != DoorOpen || w.Get(x, y+1, z) != DoorTopOpen || w.Solid(x, y, z) {
+		t.Fatal("opening from the top half should open both halves")
+	}
+	g.breakBlock(x, y+1, z)
+	if w.Get(x, y, z) != Air || w.Get(x, y+1, z) != Air {
+		t.Fatal("breaking one half removes the door")
+	}
+	doors := 0
+	for _, d := range g.Drops {
+		if d.Block == DoorClosed {
+			doors++
+		}
+	}
+	if doors != 1 {
+		t.Fatalf("a broken door drops exactly one door, got %d", doors)
+	}
+}
+
+// A closed trapdoor is a slab you stand on at its real height; open, you fall through.
+func TestTrapdoor(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	x, z := floorI(g.Spawn.X)+6, floorI(g.Spawn.Z)+2
+	y := w.SurfaceY(x, z)
+	for yy := y - 3; yy < y+3; yy++ {
+		w.Set(x, yy, z, Air)
+	}
+	w.Set(x, y, z, TrapdoorClosed)
+	pos, res := w.MoveBox(rl.NewVector3(float32(x)+0.5, float32(y)+1.5, float32(z)+0.5), 0.3, 1.8, rl.NewVector3(0, -3, 0), false)
+	if !res.Ground || math.Abs(float64(pos.Y-(float32(y)+trapdoorH))) > 0.01 {
+		t.Fatalf("should land on the slab at %v, got %v ground %v", float32(y)+trapdoorH, pos.Y, res.Ground)
+	}
+	w.Set(x, y, z, TrapdoorOpen)
+	pos, res = w.MoveBox(pos, 0.3, 1.8, rl.NewVector3(0, -1, 0), false)
+	if res.Ground || pos.Y >= float32(y) {
+		t.Fatalf("an open trapdoor should let you fall: y %v ground %v", pos.Y, res.Ground)
+	}
+}
+
+// Crops grow stage by stage in the sun, vines set fruit beside them, and saplings grow their own trees.
+func TestCropsAndTrees(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	x, z := floorI(g.Spawn.X)+8, floorI(g.Spawn.Z)+8
+	y := w.SurfaceY(x, z)
+	for dx := -2; dx <= 2; dx++ {
+		for dz := -2; dz <= 2; dz++ {
+			w.Set(x+dx, y-1, z+dz, Dirt)
+			for yy := y; yy < y+8; yy++ {
+				w.Set(x+dx, yy, z+dz, Air)
+			}
+		}
+	}
+	w.Set(x, y, z, CarrotGrowing)
+	w.Set(x+1, y, z, PumpkinStem)
+	w.Set(x-2, y, z-2, CherrySapling)
+	for w.flushLight(); len(w.relight) > 0; {
+		w.flushLight() // let the sun reach the cleared patch
+	}
+	g.Player.Pos = rl.NewVector3(float32(x)+0.5, float32(y)+20, float32(z)+0.5) // out of the way
+	for i := 0; i < 400; i++ {
+		g.GrowCD = 0
+		g.growSaplings(1)
+	}
+	if w.Get(x, y, z) != CarrotRipe {
+		t.Fatalf("carrots should ripen: %s", blocks[w.Get(x, y, z)].Name)
+	}
+	pumpkins := 0
+	for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		if w.Get(x+1+d[0], y, z+d[1]) == Pumpkin {
+			pumpkins++
+		}
+	}
+	if pumpkins == 0 || w.Get(x+1, y, z) != PumpkinStem {
+		t.Fatal("a pumpkin vine should set a pumpkin beside it and remain")
+	}
+	if w.Get(x-2, y, z-2) != CherryLog {
+		t.Fatalf("a cherry sapling should grow a cherry tree: %s", blocks[w.Get(x-2, y, z-2)].Name)
+	}
+	// Every new tree kind appears somewhere in a fresh large world.
+	seen := map[Block]bool{}
+	for _, b := range w.Blocks {
+		switch b {
+		case AcaciaLog, PalmLog, CherryLog, Pumpkin, Melon, CarrotRipe, BeetrootRipe:
+			seen[b] = true
+		}
+	}
+	for _, b := range []Block{AcaciaLog, PalmLog, CherryLog, Pumpkin, Melon, CarrotRipe, BeetrootRipe} {
+		if !seen[b] {
+			t.Errorf("world generation should place %s", blocks[b].Name)
+		}
+	}
+}

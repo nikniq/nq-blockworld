@@ -56,8 +56,7 @@ func (w *World) placeBeaconTower(heights []int) {
 		}
 	}
 	// Doorway and a ladder up the inside of the far wall to the roof hatch.
-	w.setLocal(bx, base, bz+half, DoorClosed)
-	w.setLocal(bx, base+1, bz+half, Air)
+	w.setDoorLocal(bx, base, bz+half)
 	for y := base; y < base+height; y++ {
 		w.setLocal(bx, y, bz-half+1, Ladder)
 	}
