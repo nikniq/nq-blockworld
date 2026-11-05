@@ -3,6 +3,9 @@ package main
 import (
 	"math"
 	"math/rand"
+	"runtime"
+	"sort"
+	"sync"
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -2128,9 +2131,12 @@ func (m *meshBuf) emitFaceUV(f *faceDef, u0, v0, u1, v1, x, y, z float32, box [2
 		bright := 0.55 + 0.45*float32(ao[k])/3
 		shade[k] = uint8(clamp(f.shade*tint*bright*255, 0, 255))
 	}
-	order := [6]int{0, 1, 2, 0, 2, 3}
+	// Four corners per face; the shared index pattern (0,1,2, 0,2,3) makes the
+	// two triangles. Starting from corner 1 instead of 0 flips the diagonal,
+	// which keeps ambient occlusion from smearing across the wrong pair.
+	order := [4]int{0, 1, 2, 3}
 	if ao[0]+ao[2] < ao[1]+ao[3] {
-		order = [6]int{1, 2, 3, 1, 3, 0}
+		order = [4]int{1, 2, 3, 0}
 	}
 	for _, i := range order {
 		m.verts = append(m.verts, pos[i][0], pos[i][1], pos[i][2])
@@ -2185,7 +2191,7 @@ func (m *meshBuf) emitCross(b Block, x, y, z, h float32, l cornerLight, tintCode
 			// Corners: bottom-a, bottom-b, top-b, top-a.
 			pts := [4][3]float32{{x + ax, y, z + az}, {x + bx, y, z + bz}, {x + bx, y + h, z + bz}, {x + ax, y + h, z + az}}
 			uvs := [4][2]float32{{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}}
-			for _, i := range [6]int{0, 1, 2, 0, 2, 3} {
+			for i := range pts {
 				m.verts = append(m.verts, pts[i][0], pts[i][1], pts[i][2])
 				m.norms = append(m.norms, 0, 1, 0)
 				m.uvs = append(m.uvs, uvs[i][0], uvs[i][1])
@@ -2195,11 +2201,45 @@ func (m *meshBuf) emitCross(b Block, x, y, z, h float32, l cornerLight, tintCode
 	}
 }
 
-// setLastFaceAlpha rewrites the alpha of the six vertices just emitted.
+// setLastFaceAlpha rewrites the alpha of the four vertices just emitted.
 func (m *meshBuf) setLastFaceAlpha(a uint8) {
-	for k := 1; k <= 6; k++ {
+	for k := 1; k <= 4; k++ {
 		m.cols[len(m.cols)-4*k+3] = a
 	}
+}
+
+// Every mesh is a list of quads, four vertices each, drawn through one shared
+// index pattern. Indexing cuts the vertices the GPU must process by a third
+// compared with six per face. 16-bit indices reach 65536 vertices; the rare
+// mesh that is larger is expanded to plain triangles instead.
+const maxQuadVerts = 65532
+
+var quadIndex = func() []uint16 {
+	idx := make([]uint16, maxQuadVerts/4*6)
+	for q := 0; q < maxQuadVerts/4; q++ {
+		v := uint16(q * 4)
+		copy(idx[q*6:], []uint16{v, v + 1, v + 2, v, v + 2, v + 3})
+	}
+	return idx
+}()
+
+// expand rewrites the quads as two triangles each, for a mesh too big to index.
+func (m *meshBuf) expand() {
+	n := len(m.verts) / 12
+	verts := make([]float32, 0, n*18)
+	norms := make([]float32, 0, n*18)
+	uvs := make([]float32, 0, n*12)
+	cols := make([]uint8, 0, n*24)
+	for q := 0; q < n; q++ {
+		for _, k := range [6]int{0, 1, 2, 0, 2, 3} {
+			i := q*4 + k
+			verts = append(verts, m.verts[i*3:i*3+3]...)
+			norms = append(norms, m.norms[i*3:i*3+3]...)
+			uvs = append(uvs, m.uvs[i*2:i*2+2]...)
+			cols = append(cols, m.cols[i*4:i*4+4]...)
+		}
+	}
+	m.verts, m.norms, m.uvs, m.cols = verts, norms, uvs, cols
 }
 
 // vertexBufs is one set of CPU vertex arrays. Chunk builds borrow a set from
@@ -2212,6 +2252,9 @@ type vertexBufs struct {
 }
 
 var bufPool []vertexBufs
+
+// meshWorkers is how many chunks are meshed at once: the spare cores, up to eight.
+var meshWorkers = max(1, min(runtime.NumCPU()-1, 8))
 
 // reset readies the buffer for a build, borrowing arrays from the pool.
 func (m *meshBuf) reset() {
@@ -2233,6 +2276,7 @@ func (m *meshBuf) release() {
 
 func (m *meshBuf) free() {
 	if m.loaded {
+		m.mesh.Indices = nil // the shared index array is ours, not raylib's to free
 		rl.UnloadMesh(&m.mesh)
 		m.loaded = false
 	}
@@ -2245,8 +2289,15 @@ func (m *meshBuf) upload() {
 		m.release()
 		return
 	}
-	m.mesh.VertexCount = int32(len(m.verts) / 3)
-	m.mesh.TriangleCount = m.mesh.VertexCount / 3
+	if len(m.verts)/3 > maxQuadVerts {
+		m.expand()
+		m.mesh.VertexCount = int32(len(m.verts) / 3)
+		m.mesh.TriangleCount = m.mesh.VertexCount / 3
+	} else {
+		m.mesh.VertexCount = int32(len(m.verts) / 3)
+		m.mesh.TriangleCount = m.mesh.VertexCount / 2
+		m.mesh.Indices = &quadIndex[0] // stays set: raylib draws indexed when it is non-nil
+	}
 	m.mesh.Vertices = &m.verts[0]
 	m.mesh.Normals = &m.norms[0]
 	m.mesh.Texcoords = &m.uvs[0]
@@ -2260,11 +2311,56 @@ func (m *meshBuf) upload() {
 	m.release()
 }
 
+// buildChunk rebuilds one chunk's meshes from start to finish.
 func (w *World) buildChunk(ci, cj int, c *chunk) {
+	w.prepChunk(c)
+	w.meshChunk(ci, cj, c)
+	w.uploadChunk(c)
+}
+
+// A build has three steps so that several chunks can be meshed at once:
+// prepChunk borrows vertex arrays (main thread, the pool is not locked),
+// meshChunk fills them (any goroutine: it only reads the world and writes
+// its own chunk), and uploadChunk hands them to the GPU (main thread).
+func (w *World) prepChunk(c *chunk) {
 	for k := 0; k < chunkSections; k++ {
 		c.opaque[k].reset()
 		c.trans[k].reset()
 	}
+}
+
+func (w *World) uploadChunk(c *chunk) {
+	for k := 0; k < chunkSections; k++ {
+		c.opaque[k].upload()
+		c.trans[k].upload()
+	}
+}
+
+// buildChunks meshes a batch in parallel and uploads the results in order.
+func (w *World) buildChunks(batch []cand) {
+	for _, k := range batch {
+		w.prepChunk(k.c)
+	}
+	if len(batch) == 1 {
+		w.meshChunk(batch[0].ci, batch[0].cj, batch[0].c)
+	} else {
+		var wg sync.WaitGroup
+		for _, k := range batch {
+			wg.Add(1)
+			go func(k cand) {
+				defer wg.Done()
+				w.meshChunk(k.ci, k.cj, k.c)
+			}(k)
+		}
+		wg.Wait()
+	}
+	for _, k := range batch {
+		w.uploadChunk(k.c)
+		k.c.dirty = false
+	}
+}
+
+func (w *World) meshChunk(ci, cj int, c *chunk) {
 	occ := func(x, y, z int) int {
 		if w.getLocal(x, y, z).Opaque() {
 			return 1
@@ -2326,6 +2422,11 @@ func (w *World) buildChunk(ci, cj int, c *chunk) {
 					if (nb.Opaque() && !(leafy && nb == b)) || (trans && nb == b) {
 						continue
 					}
+					if leafy && nb == b && f.n[0]+f.n[1]+f.n[2] < 0 {
+						// Two leaf blocks share this plane and both would draw it,
+						// back to back. One is enough to give the canopy its depth.
+						continue
+					}
 					ao := [4]int{3, 3, 3, 3}
 					var light [4]cornerLight
 					for k, cn := range faceCorners {
@@ -2369,10 +2470,6 @@ func (w *World) buildChunk(ci, cj int, c *chunk) {
 				}
 			}
 		}
-	}
-	for k := 0; k < chunkSections; k++ {
-		c.opaque[k].upload()
-		c.trans[k].upload()
 	}
 }
 
@@ -2712,38 +2809,39 @@ func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(c *chunk, m r
 	// least one chunk is built per frame so a backlog always drains; a large
 	// one (a teleport, a respawn) gets a bigger slice so it clears in about a
 	// second rather than trickling in.
+	// Chunks are meshed in parallel batches: the CPU work of a batch costs
+	// about what one chunk used to, so a backlog drains several times faster
+	// inside the same budget. Uploads stay on this thread, which is what
+	// limits a batch in normal play; a backlog or the first frame uses every
+	// spare core.
 	budget := time.Duration(quality().BuildMS * float32(time.Millisecond))
+	batchMax := 3
 	if len(dirty) > 24 {
 		budget *= 3
+		batchMax = meshWorkers
 	}
 	if !w.warmed {
 		budget = time.Hour // the load pause hides the first frame's builds
+		batchMax = meshWorkers
 		w.warmed = true
 	}
+	sort.Slice(dirty, func(i, j int) bool { return dirty[i].d2 < dirty[j].d2 })
 	start := time.Now()
 	built := 0
-	for i := 0; i < len(dirty) && (i == 0 || time.Since(start) < budget); i++ {
-		best := i
-		for j := i + 1; j < len(dirty); j++ {
-			if dirty[j].d2 < dirty[best].d2 {
-				best = j
-			}
-		}
-		dirty[i], dirty[best] = dirty[best], dirty[i]
-		k := dirty[i]
+	if perfTrace && len(dirty) > 24 {
+		defer func() { rl.TraceLog(rl.LogInfo, "LOAD built %d chunks in %.0fms", built, ms(time.Since(start))) }()
+	}
+	for built < len(dirty) && (built == 0 || time.Since(start) < budget) {
+		n := min(batchMax, meshWorkers, len(dirty)-built)
+		batch := dirty[built : built+n]
 		t0 := time.Now()
-		w.buildChunk(k.ci, k.cj, k.c)
-		if d := time.Since(t0); d > 4*time.Millisecond && perfTrace {
-			nv := 0
-			for s := 0; s < chunkSections; s++ {
-				nv += int(k.c.opaque[s].mesh.VertexCount + k.c.trans[s].mesh.VertexCount)
-			}
-			rl.TraceLog(rl.LogInfo, "BUILD chunk %d,%d took %.1fms verts=%d d2=%.0f", k.ci, k.cj, ms(d), nv, k.d2)
+		w.buildChunks(batch)
+		if d := time.Since(t0); d > 6*time.Millisecond && perfTrace {
+			rl.TraceLog(rl.LogInfo, "BUILD batch of %d took %.1fms", n, ms(d))
 		}
-		perfBuilds++
-		built++
-		k.c.dirty = false
-		ready = append(ready, k)
+		perfBuilds += n
+		built += n
+		ready = append(ready, batch...)
 	}
 	renderStats.Pending = max(0, len(dirty)-built)
 	renderStats.Chunks = len(ready)
@@ -2781,7 +2879,11 @@ func sectionVisible(k int, m rl.Matrix, cam rl.Camera3D, ci, cj int) bool {
 // Draw renders the opaque geometry of all chunks not fully behind the camera.
 func (w *World) Draw(cam rl.Camera3D) {
 	if !w.gpu {
+		t0 := time.Now()
 		w.initGPU()
+		if perfTrace {
+			rl.TraceLog(rl.LogInfo, "LOAD initGPU %.0fms", ms(time.Since(t0)))
+		}
 	}
 	w.visibleChunks(cam, true, func(c *chunk, m rl.Matrix) {
 		for k := 0; k < chunkSections; k++ {

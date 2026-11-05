@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sync"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -686,22 +687,29 @@ func paintSkinHi(kind SkinKind, part, face, x, y int) rl.Color {
 
 func buildSkinAtlas() *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, skinTiles*skinCell, skinRows*skinCell))
+	// Each creature paints its own tiles, so the kinds can be painted side by side.
+	var wg sync.WaitGroup
 	for kind := SkinKind(0); kind <= numSkins; kind++ {
-		for part := 0; part < numParts; part++ {
-			for face := 0; face < 6; face++ {
-				i := skinTile(kind, part, face)
-				ox, oy := (i%skinTiles)*skinCell, (i/skinTiles)*skinCell
-				for y := 0; y < skinCell; y++ {
-					for x := 0; x < skinCell; x++ {
-						px := min(max(x-skinPad, 0), skinRes-1)
-						py := min(max(y-skinPad, 0), skinRes-1)
-						c := paintSkinHi(kind, part, face, px, py)
-						img.SetRGBA(ox+x, oy+y, color.RGBA{c.R, c.G, c.B, c.A})
+		wg.Add(1)
+		go func(kind SkinKind) {
+			defer wg.Done()
+			for part := 0; part < numParts; part++ {
+				for face := 0; face < 6; face++ {
+					i := skinTile(kind, part, face)
+					ox, oy := (i%skinTiles)*skinCell, (i/skinTiles)*skinCell
+					for y := 0; y < skinCell; y++ {
+						for x := 0; x < skinCell; x++ {
+							px := min(max(x-skinPad, 0), skinRes-1)
+							py := min(max(y-skinPad, 0), skinRes-1)
+							c := paintSkinHi(kind, part, face, px, py)
+							img.SetRGBA(ox+x, oy+y, color.RGBA{c.R, c.G, c.B, c.A})
+						}
 					}
 				}
 			}
-		}
+		}(kind)
 	}
+	wg.Wait()
 	return img
 }
 

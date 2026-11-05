@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -15,8 +19,7 @@ import (
 // theme on the menu. Every piece is built from a chord progression in a
 // mode, with a generated melody in call-and-response phrases, a filtered
 // pad, a bass line, an arpeggio and light percussion, mixed in stereo
-// through a small reverb. Rendering happens on background goroutines so
-// the game starts at once; a piece joins in when it is ready.
+// through a small reverb.
 
 type Mood int
 
@@ -32,60 +35,82 @@ const (
 
 var moodNames = [numMoods]string{"Menu", "Day", "Night", "Cave", "Danger"}
 
-// MusicBox owns the rendered pieces and their fades.
+// MusicBox owns the pieces and their fades. Each piece lives as a WAV file in
+// a cache folder beside the saves and is played as a stream, so only a small
+// buffer of it is ever in memory and nothing large is handed to the audio
+// device at once. A piece is rendered the first time the game runs (one at a
+// time, on a background goroutine) and simply opened on every later launch.
 type MusicBox struct {
 	tracks  [numMoods]musicTrack
-	ready   chan renderedPiece
+	ready   chan Mood
 	Current Mood
 	hold    float32 // seconds danger music lingers after the last threat
 }
 
 type musicTrack struct {
-	sound  rl.Sound
+	stream rl.Music
 	loaded bool
 	vol    float32 // current fade level 0..1
 	target float32
-	length float32 // seconds
-	played float32 // seconds since it was last started
 }
 
-type renderedPiece struct {
-	mood   Mood
-	data   []byte
-	frames int
+// musicVersion names the cache files; bump it when the composition changes.
+const musicVersion = 2
+
+func musicPath(mood Mood) string {
+	return filepath.Join(filepath.Dir(savePath()), "music", fmt.Sprintf("v%d-%s.wav", musicVersion, strings.ToLower(moodNames[mood])))
 }
 
-// NewMusicBox starts rendering every piece in the background.
+// NewMusicBox opens the cached pieces and renders any that are missing.
 func NewMusicBox() *MusicBox {
-	m := &MusicBox{ready: make(chan renderedPiece, numMoods), Current: MoodNone}
+	m := &MusicBox{ready: make(chan Mood, numMoods), Current: MoodNone}
+	var missing []Mood
 	for mood := Mood(0); mood < numMoods; mood++ {
-		go func(mood Mood) {
-			data, frames := renderPiece(mood)
-			m.ready <- renderedPiece{mood, data, frames}
-		}(mood)
+		if st, err := os.Stat(musicPath(mood)); err == nil && st.Size() > 44 {
+			m.ready <- mood
+		} else {
+			missing = append(missing, mood)
+		}
+	}
+	if len(missing) > 0 {
+		go func() {
+			os.MkdirAll(filepath.Dir(musicPath(0)), 0o755)
+			// Old versions' files are no use to anyone.
+			if old, _ := filepath.Glob(filepath.Join(filepath.Dir(musicPath(0)), "v*.wav")); old != nil {
+				for _, f := range old {
+					if !strings.HasPrefix(filepath.Base(f), fmt.Sprintf("v%d-", musicVersion)) {
+						os.Remove(f)
+					}
+				}
+			}
+			for _, mood := range missing {
+				data, frames := renderPiece(mood)
+				// Write beside the target and rename, so a half-written file is never opened.
+				tmp := musicPath(mood) + ".tmp"
+				if writeWav(tmp, data, frames) == nil && os.Rename(tmp, musicPath(mood)) == nil {
+					m.ready <- mood
+				}
+			}
+		}()
 	}
 	return m
 }
 
 // Update fades toward the wanted mood. Call it once a frame on the main thread.
 func (m *MusicBox) Update(want Mood, dt float32, vol float32) {
-	// Pick up pieces that finished rendering.
-	for {
+	// Open pieces as they become available.
+	for more := true; more; {
 		select {
-		case p := <-m.ready:
-			w := rl.NewWave(uint32(p.frames), sampleRate, 16, 2, p.data)
-			t := &m.tracks[p.mood]
-			t.sound = rl.LoadSoundFromWave(w)
-			t.loaded = true
-			t.length = float32(p.frames) / sampleRate
+		case mood := <-m.ready:
+			t := &m.tracks[mood]
+			t.stream = rl.LoadMusicStream(musicPath(mood))
+			t.stream.Looping = true
+			t.loaded = rl.IsMusicValid(t.stream)
 		default:
-			goto loaded
+			more = false
 		}
 	}
-loaded:
-	if want != m.Current {
-		m.Current = want
-	}
+	m.Current = want
 	for i := range m.tracks {
 		t := &m.tracks[i]
 		if !t.loaded {
@@ -105,18 +130,16 @@ loaded:
 		} else if t.vol > t.target {
 			t.vol = max(t.target, t.vol-rate)
 		}
-		playing := rl.IsSoundPlaying(t.sound)
+		playing := rl.IsMusicStreamPlaying(t.stream)
 		switch {
 		case t.vol <= 0 && playing:
-			rl.StopSound(t.sound)
-		case t.vol > 0 && !playing && t.target > 0:
-			// Start, or loop round: the pieces end on a held tonic so the join reads as a phrase.
-			rl.SetSoundVolume(t.sound, t.vol*vol)
-			rl.PlaySound(t.sound)
-			t.played = 0
+			rl.StopMusicStream(t.stream)
+		case t.vol > 0 && !playing:
+			rl.SetMusicVolume(t.stream, t.vol*vol)
+			rl.PlayMusicStream(t.stream)
 		case playing:
-			t.played += dt
-			rl.SetSoundVolume(t.sound, t.vol*vol)
+			rl.SetMusicVolume(t.stream, t.vol*vol)
+			rl.UpdateMusicStream(t.stream)
 		}
 	}
 }
@@ -126,8 +149,8 @@ func (m *MusicBox) Stop() {
 	for i := range m.tracks {
 		t := &m.tracks[i]
 		t.vol, t.target = 0, 0
-		if t.loaded && rl.IsSoundPlaying(t.sound) {
-			rl.StopSound(t.sound)
+		if t.loaded && rl.IsMusicStreamPlaying(t.stream) {
+			rl.StopMusicStream(t.stream)
 		}
 	}
 	m.Current = MoodNone
@@ -137,9 +160,27 @@ func (m *MusicBox) Stop() {
 func (m *MusicBox) Close() {
 	for i := range m.tracks {
 		if m.tracks[i].loaded {
-			rl.UnloadSound(m.tracks[i].sound)
+			rl.UnloadMusicStream(m.tracks[i].stream)
 		}
 	}
+}
+
+// writeWav saves interleaved 16-bit stereo samples as a WAV file.
+func writeWav(path string, pcm []byte, frames int) error {
+	h := make([]byte, 44)
+	copy(h[0:], "RIFF")
+	binary.LittleEndian.PutUint32(h[4:], uint32(36+len(pcm)))
+	copy(h[8:], "WAVEfmt ")
+	binary.LittleEndian.PutUint32(h[16:], 16)
+	binary.LittleEndian.PutUint16(h[20:], 1)
+	binary.LittleEndian.PutUint16(h[22:], 2)
+	binary.LittleEndian.PutUint32(h[24:], sampleRate)
+	binary.LittleEndian.PutUint32(h[28:], sampleRate*4)
+	binary.LittleEndian.PutUint16(h[32:], 4)
+	binary.LittleEndian.PutUint16(h[34:], 16)
+	copy(h[36:], "data")
+	binary.LittleEndian.PutUint32(h[40:], uint32(len(pcm)))
+	return os.WriteFile(path, append(h, pcm...), 0o644)
 }
 
 // ---------- composition ----------

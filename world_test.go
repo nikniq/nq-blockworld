@@ -189,10 +189,10 @@ func TestCraftingAndHotbar(t *testing.T) {
 func TestEmitFace(t *testing.T) {
 	var m meshBuf
 	m.emitFace(&faces[0], Grass, 0, 0, 0, unitBox, 1, [4]int{3, 3, 3, 3}, fullLight)
-	if len(m.verts) != 18 || len(m.uvs) != 12 || len(m.cols) != 24 {
-		t.Fatalf("face sizes %d %d %d", len(m.verts), len(m.uvs), len(m.cols))
+	if len(m.verts) != 12 || len(m.uvs) != 8 || len(m.cols) != 16 {
+		t.Fatalf("face sizes %d %d %d (a face is four indexed corners)", len(m.verts), len(m.uvs), len(m.cols))
 	}
-	for i := 1; i < 18; i += 3 {
+	for i := 1; i < 12; i += 3 {
 		if m.verts[i] != 1 {
 			t.Fatalf("top face vertex not at y=1: %v", m.verts)
 		}

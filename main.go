@@ -2052,11 +2052,14 @@ func (g *Game) draw3D() {
 	w.SetEnv(cam, env)
 	renderStats.Verts = 0
 	rl.BeginMode3D(cam)
+	perfMark("sky")
 	if !p.HeadWater {
 		g.Sky.DrawDome(cam)
 		g.Sky.DrawSky(cam)
 	}
+	perfMark("terrain")
 	w.Draw(cam)
+	perfMark("entities")
 	// Entities go through the world shader so they are lit and fogged like the terrain.
 	// Entities are drawn at the copy of their position nearest the camera, so the
 	// wrapped world's seam is invisible; positions are restored afterwards.
@@ -2088,6 +2091,9 @@ func (g *Game) draw3D() {
 		}
 		g.drawHumanoid(r.PlayerState, off, TierIron, TierIron, w.Luminance(rl.NewVector3(r.Pos.X, r.Pos.Y+1, r.Pos.Z), env.Light))
 	}
+	perfMark("props")
+	g.drawFlags(cam)
+	g.drawDragons(cam)
 	g.drawShadows()
 	g.drawDrops()
 	g.drawArrows()
@@ -2098,10 +2104,13 @@ func (g *Game) draw3D() {
 			rl.DrawCube(rl.NewVector3(t.Pos.X, t.Pos.Y+0.5, t.Pos.Z), 1.02, 1.02, 1.02, rl.NewColor(255, 255, 255, 170))
 		}
 	}
+	perfMark("clouds")
 	if quality().Clouds {
 		g.Sky.DrawClouds(cam, float32(rl.GetTime()))
 	}
+	perfMark("flush")
 	w.EndShader()
+	perfMark("overlays")
 	if !p.HeadWater && w.SkyExposed(p.Eye()) {
 		top := w.Get(floorI(p.Pos.X), w.SurfaceY(floorI(p.Pos.X), floorI(p.Pos.Z))-1, floorI(p.Pos.Z))
 		g.Sky.DrawRain(cam, float32(rl.GetTime()), top == Snow)
@@ -2141,10 +2150,6 @@ func (g *Game) draw3D() {
 	g.drawBolt()
 	g.drawBobber()
 	g.drawAsteroid(cam)
-	w.BeginShader()
-	g.drawFlags(cam)
-	g.drawDragons(cam)
-	w.EndShader()
 	for _, s := range g.Sparks {
 		if s.Block != Air {
 			m := rl.MatrixMultiply(rl.MatrixMultiply(rl.MatrixScale(0.12, 0.12, 0.12), rl.MatrixRotateY(s.Spin)), rl.MatrixTranslate(s.Pos.X, s.Pos.Y, s.Pos.Z))
@@ -2153,6 +2158,7 @@ func (g *Game) draw3D() {
 		}
 		rl.DrawCube(s.Pos, 0.1, 0.1, 0.1, rl.Fade(s.Col, s.Life*3))
 	}
+	perfMark("water")
 	w.DrawTranslucent(cam)
 	g.drawHeldBlock(cam)
 	rl.EndMode3D()
@@ -3633,6 +3639,8 @@ func (g *Game) benchStep(frame int) bool {
 		p.Pitch = -0.3
 	case frame == 90:
 		perfFrames, perfSeconds, perfWorst, perfSlow, perfBuilds = 0, 0, 0, 0, 0 // ignore generation, setup and first builds
+		perfOn, perfOpen = true, ""
+		clear(perfSections)
 		relightCalls, relightCells = 0, 0
 	case frame == 120 && os.Getenv("BLOCKWORLD_RECTEST") != "":
 		recorder.Start() // exercise the video recorder under the harness
@@ -4225,11 +4233,13 @@ func main() {
 		g.draw3D()
 		perfPhase[1] = time.Since(tD)
 		tP := time.Now()
+		perfMark("post")
 		if usePost {
 			postfx.end()
 		}
 		perfPhase[2] = time.Since(tP)
 		tE := time.Now()
+		perfMark("hud")
 		switch g.State {
 		case StatePlaying:
 			g.drawHUD()
@@ -4256,8 +4266,10 @@ func main() {
 		if msg := recorder.Poll(false); msg != "" {
 			g.say(msg, 3)
 		}
+		perfMark("present")
 		rl.EndDrawing()
 		perfPhase[3] = time.Since(tE)
+		perfMark("update")
 		if g.State == StatePlaying {
 			perfFrames++
 			perfSeconds += rl.GetFrameTime()
@@ -4273,6 +4285,7 @@ func main() {
 	}
 	if shots || soak || bench {
 		rl.TraceLog(rl.LogInfo, "PERF: frames=%d avgFPS=%.1f worst=%.1fms slow=%d builds=%d lastChunks=%d lastVerts=%dk relights=%d cols=%dk ver=%d", perfFrames, float32(perfFrames)/max(perfSeconds, 0.001), perfWorst*1000, perfSlow, perfBuilds, renderStats.Chunks, renderStats.Verts/1000, relightCalls, relightCells/1000, g.World.Version)
+		rl.TraceLog(rl.LogInfo, "PHASES ms/frame:%s", perfReport(perfFrames))
 	}
 	if recorder.Active {
 		recorder.Stop()

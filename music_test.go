@@ -46,20 +46,3 @@ func TestMusicPieces(t *testing.T) {
 		}
 	}
 }
-
-func writeWav(path string, pcm []byte, frames int) {
-	h := make([]byte, 44)
-	copy(h[0:], "RIFF")
-	binary.LittleEndian.PutUint32(h[4:], uint32(36+len(pcm)))
-	copy(h[8:], "WAVEfmt ")
-	binary.LittleEndian.PutUint32(h[16:], 16)
-	binary.LittleEndian.PutUint16(h[20:], 1)
-	binary.LittleEndian.PutUint16(h[22:], 2)
-	binary.LittleEndian.PutUint32(h[24:], sampleRate)
-	binary.LittleEndian.PutUint32(h[28:], sampleRate*4)
-	binary.LittleEndian.PutUint16(h[32:], 4)
-	binary.LittleEndian.PutUint16(h[34:], 16)
-	copy(h[36:], "data")
-	binary.LittleEndian.PutUint32(h[40:], uint32(len(pcm)))
-	os.WriteFile(path, append(h, pcm...), 0o644)
-}
