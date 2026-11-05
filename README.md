@@ -175,8 +175,14 @@ block textures and sound effects are generated at startup.
 - **Armour**: leather (cows drop leather), iron and diamond armour absorb 25, 45 and 65 percent of
   melee, arrow and blast damage.
 - **Weather**: rain rolls in now and then, greying the sky, thickening the fog and dimming the light.
-- **Save and continue**: S on the pause screen saves; quitting to the menu or closing the window
-  saves too. C on the menu continues the saved world. N on the death screen starts a new world.
+- **Save and continue**: S on the pause screen saves; the game also saves every two minutes and when
+  you quit to the menu or close the window. C on the menu continues the saved world. N on the death
+  screen starts a new world.
+- **World slots**: five worlds can be kept side by side. L on the menu steps through the slots and
+  shows when each was last saved; Continue, saving and hosting all use the selected slot. Starting a
+  new world never overwrites a saved one while a slot is free: it takes the first empty slot, and
+  the menu says so. Only when all five are full does a new world replace the selected one. The files
+  are `world.sav`, `world2.sav` and so on in the save folder.
 - **Hotbar**: rifle, sword and pickaxe, followed by every block stack you own. Pick with 1-9 or the wheel.
 - The rifle is hitscan with 12-round magazines; headshots deal triple damage. Ammo comes from crafting and
   from hostiles. Health regenerates slowly out of combat. Falls hurt; water breaks the fall and you can swim.
@@ -235,6 +241,7 @@ block textures and sound effects are generated at startup.
 | P (online, hold) | Player list |
 | S (paused) | Save world |
 | C (menu) | Continue saved world |
+| L (menu) | Next world slot |
 | Q (paused or dead) | Back to menu |
 | Enter (menu or dead) | Start / restart |
 

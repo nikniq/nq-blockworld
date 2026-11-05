@@ -160,6 +160,7 @@ type Game struct {
 	Chatting       bool
 	PlayerList     []PlayerState // last known players (for the P overlay)
 	AutoSaveT      float32
+	showY          int // ground level of the showcase stage
 	netTestCell    [3]int
 	netTestWas     Block
 	Remotes        map[uint32]*RemotePlayer
@@ -3185,8 +3186,17 @@ func (g *Game) drawOverlay() {
 		centered("Dig for coal, iron, gold and diamonds. Craft better pickaxes, swords and rifle ammo.", sh/2+40, 18, rl.LightGray)
 		centered("Zombies, spiders and creepers rise at night. Undead burn at sunrise. Creepers explode.", sh/2+64, 18, rl.LightGray)
 		centered("Press ENTER or CLICK to start a new world", sh/2+100, 28, rl.Lime)
+		slot := fmt.Sprintf("L  world slot %d of %d: %s", settings.Slot+1, worldSlots, slotInfo(settings.Slot))
 		if saveExists() {
-			centered("C  continue saved world", sh/2+134, 24, rl.SkyBlue)
+			// A new world never silently replaces a saved one while a slot is free.
+			if free := firstEmptySlot(); free >= 0 {
+				slot += fmt.Sprintf("      new worlds go to slot %d", free+1)
+			} else {
+				slot += "      all slots are full: a new world replaces this one"
+			}
+			centered("C  continue saved world      "+slot, sh/2+134, 22, rl.SkyBlue)
+		} else {
+			centered(slot, sh/2+134, 22, rl.SkyBlue)
 		}
 		found := ""
 		if n := len(g.Disc.Games()); n == 1 {
@@ -3644,12 +3654,12 @@ func (g *Game) benchStep(frame int) bool {
 func (g *Game) scriptedShots(frame int) bool {
 	switch frame {
 	case 18:
-		rl.TakeScreenshot("shot_menu.png")
+		saveShot("shot_menu.png")
 	case 20:
 		g.State = StateJoin
 		g.JoinText = "192.168.1.10:7777"
 	case 100:
-		rl.TakeScreenshot("shot_join.png")
+		saveShot("shot_join.png")
 		g.State = StateMenu
 	case 102:
 		g.Reset()
@@ -3704,7 +3714,7 @@ func (g *Game) scriptedShots(frame int) bool {
 			d.Vel = rl.NewVector3(-6, 0, 0)
 		}
 	case 204: // two frames later: the screenshot reads the previously presented frame
-		rl.TakeScreenshot("shot_sky.png")
+		saveShot("shot_sky.png")
 		settings.Creative, g.Player.Flying = false, false
 		g.Player.Pos = g.Spawn
 	case 205:
@@ -3719,7 +3729,7 @@ func (g *Game) scriptedShots(frame int) bool {
 		wf.Tamed = true
 		g.Animals = append(g.Animals, wf)
 	case 208:
-		rl.TakeScreenshot("shot_edge.png")
+		saveShot("shot_edge.png")
 		settings.Creative = false
 		g.Player.Flying = false
 		g.Player.Pos = g.Spawn
@@ -3740,7 +3750,7 @@ func (g *Game) scriptedShots(frame int) bool {
 		g.Sky.Raining, g.Sky.Rain = false, 0
 		g.Player.ArmorTier = 2
 	case 222:
-		rl.TakeScreenshot("shot_third.png")
+		saveShot("shot_third.png")
 	case 225:
 		g.ThirdPerson = false
 		g.Player.Held = Item{Kind: ItemPickaxe}
@@ -3753,7 +3763,7 @@ func (g *Game) scriptedShots(frame int) bool {
 		if a := g.Player.Aim; a.Hit {
 			g.Player.MineT = g.Player.MineTime(g.World.Get(a.X, a.Y, a.Z)) * 0.6
 		}
-		rl.TakeScreenshot("shot_day.png")
+		saveShot("shot_day.png")
 	case 232:
 		// Close-up in the open spawn clearing: villager, tamed cat and wolf facing the camera.
 		p := g.Player
@@ -3783,11 +3793,11 @@ func (g *Game) scriptedShots(frame int) bool {
 		h.Tamed = true
 	case 234:
 		g.Player.DmgFlash = 0
-		rl.TakeScreenshot("shot_closeup.png")
+		saveShot("shot_closeup.png")
 		settings.Style = StylePixel // the classic look of the same scene
 		g.World.Restyle()
 	case 236:
-		rl.TakeScreenshot("shot_pixel.png")
+		saveShot("shot_pixel.png")
 		settings.Style = StyleSketched
 		g.World.Restyle()
 	case 235:
@@ -3795,12 +3805,12 @@ func (g *Game) scriptedShots(frame int) bool {
 		g.Player.Pitch = 0.35
 		g.Player.Yaw = math.Pi * 0.75
 	case 238:
-		rl.TakeScreenshot("shot_asteroid.png")
+		saveShot("shot_asteroid.png")
 		g.Asteroid.Active = false
 		g.addCrater(g.Asteroid.Target)
 		g.ShowMap = true
 	case 241:
-		rl.TakeScreenshot("shot_map.png")
+		saveShot("shot_map.png")
 		g.ShowMap = false
 		// A full quake instantly, fault running across the view.
 		f := g.Player.FlatForward()
@@ -3816,7 +3826,7 @@ func (g *Game) scriptedShots(frame int) bool {
 		g.Player.Pos = rl.Vector3Add(epi, rl.Vector3Add(rl.Vector3Scale(f, -14), rl.NewVector3(0, 12, 0)))
 		g.Player.Pitch = -0.6
 	case 247:
-		rl.TakeScreenshot("shot_quake.png")
+		saveShot("shot_quake.png")
 		g.Sky.T = 0.72
 		settings.Creative, g.Player.Flying = false, false
 		g.Player.Pos = g.Spawn
@@ -3838,11 +3848,11 @@ func (g *Game) scriptedShots(frame int) bool {
 			g.World.Set(x, g.World.SurfaceY(x, z), z, Torch)
 		}
 	case 280:
-		rl.TakeScreenshot("shot_night.png")
+		saveShot("shot_night.png")
 	case 290:
 		g.State = StateCrafting
 	case 310:
-		rl.TakeScreenshot("shot_craft.png")
+		saveShot("shot_craft.png")
 	case 320:
 		// Into a cave: the nearest dark underground pocket, lit by one torch.
 		g.State = StatePlaying
@@ -3877,7 +3887,7 @@ func (g *Game) scriptedShots(frame int) bool {
 			}
 		}
 	case 380:
-		rl.TakeScreenshot("shot_cave.png")
+		saveShot("shot_cave.png")
 	case 390:
 		return true
 	}
@@ -3983,7 +3993,11 @@ func main() {
 	soak := os.Getenv("BLOCKWORLD_SOAK") != ""
 	netTest := os.Getenv("BLOCKWORLD_NETTEST")   // "host" or "client": scripted multiplayer check
 	bench := os.Getenv("BLOCKWORLD_BENCH") != "" // fly a lap over the terrain and report the frame rate
-	autoTune = !shots && !soak && !bench         // harness runs measure or stage frames; do not retune under them
+	showcase := showcaseDir()
+	if showcase != "" {
+		shots = true // staged like the screenshot tour: no autosave, no score files
+	}
+	autoTune = !shots && !soak && !bench // harness runs measure or stage frames; do not retune under them
 	if netTest != "" {
 		rl.SetTargetFPS(60)
 		g.Net = &Net{Name: "Tester-" + netTest}
@@ -4031,6 +4045,8 @@ func main() {
 			frame++
 			done := false
 			switch {
+			case showcase != "":
+				done = g.showcaseStep(frame, showcase)
 			case shots:
 				done = g.scriptedShots(frame)
 			case bench:
@@ -4062,9 +4078,19 @@ func main() {
 				g.Disc = startDiscovery()
 			}
 			if rl.IsKeyPressed(rl.KeyEnter) || rl.IsMouseButtonPressed(rl.MouseButtonLeft) {
+				if saveExists() {
+					// Keep the saved world: the new one takes an empty slot if there is one.
+					if free := firstEmptySlot(); free >= 0 {
+						settings.Slot = free
+						settings.save()
+					}
+				}
 				g.Reset()
 				deleteSave()
 				rl.DisableCursor()
+			} else if rl.IsKeyPressed(rl.KeyL) {
+				settings.Slot = (settings.Slot + 1) % worldSlots
+				settings.save()
 			} else if rl.IsKeyPressed(rl.KeyC) && saveExists() {
 				if g.load() {
 					rl.DisableCursor()

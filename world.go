@@ -1702,18 +1702,17 @@ func (w *World) placePalm(x, y, z int, set func(x, y, z int, b Block)) {
 	}
 	top := y + th - 1
 	set(cx, top+1, cz, PalmLeaves)
+	// Eight fronds arch out from the crown and droop at the tips: long ones
+	// along the axes, shorter ones on the diagonals.
 	for _, d := range [8][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}} {
-		long := d[0] == 0 || d[1] == 0
-		for i := 1; i <= 2; i++ {
-			if i == 2 && !long {
-				break
-			}
-			dy := 1 - i // fronds droop as they reach out
-			if i == 1 && !long {
-				dy = 0
-			}
-			if w.getLocal(cx+d[0]*i, top+dy, cz+d[1]*i) == Air {
-				set(cx+d[0]*i, top+dy, cz+d[1]*i, PalmLeaves)
+		rise := []int{1, 1, 0, -1} // height of each step out from the trunk
+		if d[0] != 0 && d[1] != 0 {
+			rise = []int{1, 0}
+		}
+		for i, dy := range rise {
+			fx, fz := cx+d[0]*(i+1), cz+d[1]*(i+1)
+			if w.getLocal(fx, top+dy, fz) == Air {
+				set(fx, top+dy, fz, PalmLeaves)
 			}
 		}
 	}

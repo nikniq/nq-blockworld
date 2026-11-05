@@ -461,10 +461,10 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 		if y > 11 && x > 6 && x < 9 {
 			return mul(rl.NewColor(100, 75, 40, 255), 0.85+0.3*n) // stem
 		}
-		if (x-7)*(x-7)+(y-6)*(y-6) < 30 {
+		if (x-7)*(x-7)+(y-6)*(y-6) < 30 && hash2(x, y, seed+3) > 0.12 {
 			return mul(base, 0.75+0.5*n)
 		}
-		return mul(base, 0.5)
+		return rl.NewColor(0, 0, 0, 0) // open air around the little tree
 	case PatLadder:
 		if x < 3 || x > 12 || y%4 == 1 || y%4 == 2 {
 			return mul(base, 0.85+0.3*n) // rails and rungs; the rest is open air
@@ -803,10 +803,10 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 		if y > 11 && x > 6 && x < 9 {
 			return mul(rl.NewColor(100, 75, 40, 255), 0.85+0.3*n) // stem
 		}
-		if (x-7)*(x-7)+(y-6)*(y-6) < 30 {
+		if (x-7)*(x-7)+(y-6)*(y-6) < 30 && hash2(x, y, seed+3) > 0.12 {
 			return mul(base, 0.75+0.5*n)
 		}
-		return mul(base, 0.5)
+		return rl.NewColor(0, 0, 0, 0) // open air around the little tree
 	case PatLadder:
 		if x < 3 || x > 12 || y%4 == 1 || y%4 == 2 {
 			return mul(base, 0.85+0.3*n) // rails and rungs; the rest is open air
@@ -963,10 +963,13 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 		return mul(base, 0.9+0.2*hash2(x/4, y, seed))
 	case PatPalmSide:
 		// Ringed trunk: the scars of old fronds.
-		if y%4 == 0 && (x+y/4)%3 != 0 {
-			return mul(base, 0.6+0.15*n)
+		switch y % 4 {
+		case 0:
+			return mul(base, 0.55+0.1*n) // the dark edge of each ring
+		case 1:
+			return mul(base, 0.8+0.15*n)
 		}
-		return mul(base, 0.85+0.3*n)
+		return mul(base, 0.95+0.2*n)
 	case PatCoconut:
 		if dx, dy := float32(x)-7.5, float32(y)-8; dx*dx+dy*dy < 36 {
 			if (x == 6 || x == 9) && y == 5 || x == 8 && y == 4 {

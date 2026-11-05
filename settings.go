@@ -28,6 +28,7 @@ type Settings struct {
 	WorldSize   int // footprint of newly generated worlds
 	Mode        int // ModeSurvival, ModeCreative, ModeZombie, ModeBattle
 	Quality     int // 0 low, 1 medium, 2 high (-1: not chosen yet)
+	Slot        int // which world slot Continue, saving and new worlds use
 }
 
 var qualityNames = [...]string{"Low", "Medium", "High"}
@@ -151,6 +152,10 @@ func loadSettings() Settings {
 			if n, err := strconv.Atoi(v); err == nil {
 				s.Mode = n
 			}
+		case "slot":
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 && n < worldSlots {
+				s.Slot = n
+			}
 		case "quality":
 			if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 2 {
 				s.Quality = n
@@ -195,7 +200,7 @@ func (s Settings) save() {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return
 	}
-	text := fmt.Sprintf("sensitivity=%.2f\nvolume=%.2f\ninvert_y=%t\nfullscreen=%t\nswap_buttons=%t\ndifficulty=%d\nlast_join=%s\nname=%s\ncreative=%t\nmusic=%t\nantialias=%t\nstyle=%d\nworld_size=%d\nmode=%d\nquality=%d\n", s.Sensitivity, s.Volume, s.InvertY, s.Fullscreen, s.SwapButtons, s.Difficulty, s.LastJoin, s.Name, s.Creative, s.Music, s.Antialias, s.Style, s.WorldSize, s.Mode, s.Quality)
+	text := fmt.Sprintf("sensitivity=%.2f\nvolume=%.2f\ninvert_y=%t\nfullscreen=%t\nswap_buttons=%t\ndifficulty=%d\nlast_join=%s\nname=%s\ncreative=%t\nmusic=%t\nantialias=%t\nstyle=%d\nworld_size=%d\nmode=%d\nquality=%d\nslot=%d\n", s.Sensitivity, s.Volume, s.InvertY, s.Fullscreen, s.SwapButtons, s.Difficulty, s.LastJoin, s.Name, s.Creative, s.Music, s.Antialias, s.Style, s.WorldSize, s.Mode, s.Quality, s.Slot)
 	_ = os.WriteFile(p, []byte(text), 0o644)
 }
 

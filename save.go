@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -78,11 +79,43 @@ func savePath() string {
 	if p := os.Getenv("BLOCKWORLD_SAVE"); p != "" {
 		return p
 	}
+	return savePathFor(settings.Slot)
+}
+
+// worldSlots is how many worlds can be kept side by side.
+const worldSlots = 5
+
+// savePathFor is the save file of a world slot: world.sav for the first
+// (where single-slot versions kept theirs), world2.sav and up for the rest.
+func savePathFor(slot int) string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "blockworld", "world.sav")
+	name := "world.sav"
+	if slot > 0 {
+		name = fmt.Sprintf("world%d.sav", slot+1)
+	}
+	return filepath.Join(dir, "blockworld", name)
+}
+
+// slotInfo describes a slot for the menu: when it was last saved, or empty.
+func slotInfo(slot int) string {
+	st, err := os.Stat(savePathFor(slot))
+	if err != nil {
+		return "empty"
+	}
+	return "saved " + st.ModTime().Format("2 Jan 15:04")
+}
+
+// firstEmptySlot returns a slot with no world in it, or -1 when all are used.
+func firstEmptySlot() int {
+	for i := 0; i < worldSlots; i++ {
+		if _, err := os.Stat(savePathFor(i)); err != nil {
+			return i
+		}
+	}
+	return -1
 }
 
 func saveExists() bool {

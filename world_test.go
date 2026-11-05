@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"math"
 	"math/rand"
@@ -1687,5 +1688,35 @@ func TestCropsAndTrees(t *testing.T) {
 		if !seen[b] {
 			t.Errorf("world generation should place %s", blocks[b].Name)
 		}
+	}
+}
+
+// World slots keep their own save files; the first slot is the old single save.
+func TestWorldSlots(t *testing.T) {
+	t.Setenv("BLOCKWORLD_SAVE", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	old := settings.Slot
+	defer func() { settings.Slot = old }()
+	if filepath.Base(savePathFor(0)) != "world.sav" || filepath.Base(savePathFor(2)) != "world3.sav" {
+		t.Fatalf("slot file names: %s %s", savePathFor(0), savePathFor(2))
+	}
+	if firstEmptySlot() != 0 || slotInfo(0) != "empty" {
+		t.Fatal("a fresh install has every slot empty")
+	}
+	for _, s := range []int{0, 1} {
+		os.MkdirAll(filepath.Dir(savePathFor(s)), 0o755)
+		os.WriteFile(savePathFor(s), []byte("x"), 0o644)
+	}
+	settings.Slot = 1
+	if !saveExists() || firstEmptySlot() != 2 || slotInfo(1) == "empty" {
+		t.Fatalf("slots 1 and 2 are used: exists %v first empty %d", saveExists(), firstEmptySlot())
+	}
+	deleteSave()
+	if saveExists() || firstEmptySlot() != 1 {
+		t.Fatal("deleting the current slot's save should leave the others alone")
+	}
+	if _, err := os.Stat(savePathFor(0)); err != nil {
+		t.Fatal("slot 1 should be untouched")
 	}
 }
