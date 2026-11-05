@@ -71,6 +71,13 @@ func (s *Skins) DrawCroc(w *World, p *Pose) {
 	s.drawPart(k, PartHead, rl.NewVector3(0.45, 0.25, 0.8), rl.NewVector3(0, 0.25, 1.1), 0, p.Swing*0.4, 0, 0, model, c)
 	s.drawPart(k, PartExtra, rl.NewVector3(0.4, 0.25, 0.9), rl.NewVector3(0, 0.3, -1.1), 0, 0, wag, 0, model, c)
 	s.drawPart(k, PartExtra, rl.NewVector3(0.22, 0.16, 0.9), rl.NewVector3(0, 0.3, -1.95), 0, 0, wag*2, 0, model, c)
+	// Two rows of scutes down the back and a raised eye either side of the skull.
+	for _, sg := range []float32{-1, 1} {
+		for i := 0; i < 6; i++ {
+			s.drawPart(k, PartArmL, rl.NewVector3(0.09, 0.07, 0.16), rl.NewVector3(sg*0.15, 0.55, -0.6+float32(i)*0.24), -0.5, 0, 0, 0, model, c)
+		}
+		s.drawPart(k, PartArmR, rl.NewVector3(0.11, 0.09, 0.14), rl.NewVector3(sg*0.15, 0.36, 0.86), -0.5, p.Swing*0.4, 0, 0, model, c)
+	}
 	for i, z := range []float32{0.5, -0.5} {
 		for _, sg := range []float32{-1, 1} {
 			lift := float32(math.Sin(float64(p.Phase+float32(i)*1.5))) * 0.3 * p.Amp * sg

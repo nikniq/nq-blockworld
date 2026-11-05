@@ -67,6 +67,15 @@ block textures and sound effects are generated at startup.
   Stone needs a pickaxe tier; iron ore needs stone, gold and diamond ore need iron.
 - **Crafting (E)**: logs to planks, torches, TNT, ladders, beds, cobblestone to stone bricks, sand to glass, ore to rifle ammo,
   and stone/iron/diamond swords and pickaxes. Better pickaxes mine faster; better swords hit harder.
+- **Creature detail**: the animals are more than boxes. Cows have horns, ears, a muzzle, an udder and
+  a tufted tail; sheep a woolly crown; pigs floppy ears and a curly tail; wolves and cats pointed ears,
+  muzzles and tails that wag or stand up; horses a neck, mane and tail; koalas and wombats their ears;
+  crocodiles rows of scutes and raised eyes. Dragons have swept-back horns, a toothed jaw that opens
+  when they breathe, spines down the back, wings hinged at shoulder and wrist with bones on the
+  leading edge and a wrist claw, clawed legs and a spade on the tail. Each kind has its own crest and
+  hide: embers glow between the fire dragon's scales, the frost dragon glitters and carries a second
+  pair of icicle horns, the earth dragon is slabbed like rock with a horn on its snout, and the water
+  dragon has a tall sail of a fin and frills behind the jaw.
 - **Four dragons** rule the skies: a fire dragon circling the highest peak, a frost dragon over the
   snowy taiga, an earth dragon on the tallest desert mesa and a water dragon out over the open sea.
   Come within forty blocks of a roost, or hurt one, and it hunts you. Fire and frost breathe fireballs

@@ -274,6 +274,9 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		return shade(base)
 	case SkinPig:
 		pink := col(235, 160, 170)
+		if part == PartArmL && face == 4 {
+			return shade(col(225, 130, 145)) // inside of the ear
+		}
 		if part == PartExtra {
 			if face == 4 && y >= 5 && y <= 9 && (x == 5 || x == 10) {
 				return col(90, 40, 50) // nostrils
@@ -286,6 +289,25 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		return shade(pink)
 	case SkinCow:
 		brown := col(85, 55, 40)
+		switch part {
+		case PartLegR: // horns, darker at the tip
+			if y <= 3 {
+				return shade(col(120, 110, 95))
+			}
+			return shade(col(228, 222, 200))
+		case PartLegL:
+			return shade(col(238, 172, 178)) // udder
+		case PartExtra: // muzzle
+			if face == 4 && y >= 5 && y <= 8 && (x == 4 || x == 11) {
+				return col(70, 45, 45) // nostrils
+			}
+			return shade(col(215, 185, 178))
+		case PartArmR: // tail with a dark tuft
+			if y >= 12 {
+				return shade(col(40, 28, 22))
+			}
+			return shade(brown)
+		}
 		if hash2(x/3, y/3, 61+part) < 0.22 {
 			brown = col(225, 220, 210) // white patches
 		}
@@ -332,6 +354,25 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		if hash2(x/2, y/2, 83+part) < 0.25 {
 			fur = col(170, 170, 175)
 		}
+		switch part {
+		case PartArmL: // ears: dark backs, pink inside
+			if face == 4 && x >= 4 && x <= 11 && y >= 4 {
+				return shade(col(215, 160, 160))
+			}
+			return shade(col(120, 120, 125))
+		case PartExtra: // muzzle
+			if face == 4 && y <= 5 && x >= 4 && x <= 11 {
+				return col(35, 35, 38) // nose
+			}
+			if face == 4 && y >= 11 {
+				return col(60, 40, 40) // mouth
+			}
+			return shade(col(230, 230, 228))
+		case PartArmR: // tail, pale at the tip
+			if y >= 11 {
+				return shade(col(240, 240, 238))
+			}
+		}
 		if part == PartHead {
 			if face == 4 {
 				if y >= 10 && x >= 6 && x <= 9 {
@@ -357,6 +398,9 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		}
 		if face == 1 && kind != SkinCatBlack {
 			fur = col(240, 230, 210)
+		}
+		if part == PartArmL && face == 4 && x >= 5 && x <= 10 && y >= 5 {
+			return shade(col(230, 150, 150)) // inside of the ear
 		}
 		if part == PartHead {
 			if face == 4 {
@@ -409,6 +453,13 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		}
 		if (part == PartLegFL || part == PartLegFR || part == PartLegBL || part == PartLegBR) && y >= 13 {
 			return shade(col(50, 45, 40)) // hooves
+		}
+		if part == PartLegL { // mane and tail
+			hair := mul(fur, 0.4)
+			if kind == SkinHorseWhite {
+				hair = col(190, 185, 175)
+			}
+			return mul(hair, 0.8+0.4*hash2(x, y/4, 97))
 		}
 		return shade(fur)
 	case SkinKangaroo:
@@ -477,6 +528,15 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		if face == 1 {
 			scale = col(170, 165, 120)
 		}
+		if part == PartArmL {
+			return shade(col(58, 74, 44)) // dark scutes
+		}
+		if part == PartArmR && (face == 2 || face == 3) && y >= 4 && y <= 11 && x >= 4 && x <= 11 {
+			if x >= 7 && x <= 8 {
+				return col(15, 15, 10) // slit pupil
+			}
+			return col(225, 205, 60) // eye
+		}
 		if part == PartHead {
 			if face == 4 {
 				if y >= 9 && (x%2 == 0) {
@@ -523,45 +583,122 @@ func paintSkin(kind SkinKind, part, face, x, y int) rl.Color {
 		}
 		return shade(hide)
 	case SkinDragon, SkinFrostDragon, SkinEarthDragon, SkinWaterDragon:
-		hide := col(170, 40, 30)
-		belly := col(220, 160, 70)
+		// Hide, belly, eye and horn colours per dragon.
+		hide, belly := col(170, 40, 30), col(225, 165, 70)
+		eye, horn := col(255, 225, 60), col(60, 45, 40)
 		switch kind {
 		case SkinFrostDragon:
-			hide, belly = col(120, 170, 220), col(220, 240, 255)
+			hide, belly, eye, horn = col(120, 170, 220), col(225, 242, 255), col(200, 250, 255), col(235, 245, 255)
 		case SkinEarthDragon:
-			hide, belly = col(120, 90, 50), col(190, 165, 110)
+			hide, belly, eye, horn = col(120, 90, 50), col(195, 170, 115), col(255, 170, 40), col(205, 190, 150)
 		case SkinWaterDragon:
-			hide, belly = col(40, 120, 150), col(150, 215, 225)
+			hide, belly, eye, horn = col(40, 120, 150), col(155, 220, 228), col(140, 255, 150), col(225, 235, 225)
 		}
-		if face == 1 {
-			hide = belly
+		// Each dragon's hide has its own character.
+		switch kind {
+		case SkinDragon:
+			if hash2(x/2, y/2, 211+part) < 0.07 && face != 1 {
+				hide = col(250, 150, 40) // embers glowing between the scales
+			}
+		case SkinFrostDragon:
+			if hash2(x, y, 223+part) < 0.06 {
+				hide = col(235, 248, 255) // frost glitter
+			}
+		case SkinEarthDragon:
+			if hash2(x/3, y/3, 227+part) < 0.28 {
+				hide = mul(hide, 0.72) // slabs of rock
+			}
+		case SkinWaterDragon:
+			if (y+x/2)%6 == 0 {
+				hide = col(90, 175, 195) // ripples of light
+			}
 		}
-		if part == PartArmR {
-			// Wing membrane between dark bones.
-			if x%5 == 0 {
-				return shade(mul(hide, 0.55))
+		switch part {
+		case PartLegR: // horns and claws, paler toward the point
+			if y <= 4 {
+				return shade(mul(horn, 1.15))
+			}
+			return shade(horn)
+		case PartLegBL: // wing bones
+			return shade(mul(hide, 0.5))
+		case PartLegFL: // back spines, bright at the tip
+			if y <= 4 {
+				return shade(belly)
+			}
+			return shade(mul(hide, 0.6))
+		case PartLegBR: // tail spade
+			if x <= 1 || x >= 14 || y <= 1 || y >= 14 {
+				return shade(mul(hide, 0.5))
 			}
 			return shade(mul(hide, 0.85))
-		}
-		if part == PartHead {
-			if face == 4 {
-				if y >= 10 && x%2 == 0 {
-					return rl.NewColor(240, 240, 230, 255) // fangs
+		case PartLegFR: // lower jaw: teeth round the rim, red inside
+			if face == 0 {
+				if x <= 1 || x >= 14 || y <= 1 || y >= 14 {
+					if (x+y)%2 == 0 {
+						return rl.NewColor(245, 245, 235, 255)
+					}
+					return shade(mul(belly, 0.8))
 				}
-				if y >= 5 && y <= 6 && (x == 3 || x == 4 || x == 11 || x == 12) {
-					return col(250, 220, 50) // burning eyes
+				return shade(col(150, 30, 35))
+			}
+			return shade(belly)
+		case PartArmR: // wing membrane between darker ribs
+			if x%5 == 0 || y == 0 {
+				return shade(mul(hide, 0.5))
+			}
+			skin := col(uint8((int(hide.R)*2+int(belly.R))/3), uint8((int(hide.G)*2+int(belly.G))/3), uint8((int(hide.B)*2+int(belly.B))/3))
+			return mul(skin, 0.8+0.25*float32(y)/15+0.1*n)
+		case PartLegL: // legs
+			if y >= 13 {
+				return shade(horn)
+			}
+		case PartHead:
+			switch face {
+			case 4: // snout
+				if y >= 9 && y <= 10 && (x == 5 || x == 10) {
+					return col(25, 15, 15) // nostrils
+				}
+				if y >= 13 && x%2 == 0 {
+					return rl.NewColor(245, 245, 235, 255) // fangs
+				}
+				if y <= 3 && (x <= 3 || x >= 12) {
+					return eye
+				}
+			case 2, 3: // the sides: an eye under a heavy brow, teeth along the lip
+				if y == 3 && x >= 4 && x <= 11 {
+					return shade(mul(hide, 0.5))
+				}
+				if y >= 4 && y <= 6 && x >= 6 && x <= 9 {
+					if x == 7 || x == 8 {
+						return col(15, 10, 10) // slit pupil
+					}
+					return eye
+				}
+				if y >= 13 && x%2 == 0 {
+					return rl.NewColor(245, 245, 235, 255)
+				}
+			case 0: // brow plates
+				if (x <= 4 || x >= 11) && y%4 == 0 {
+					return shade(mul(hide, 0.6))
 				}
 			}
-			if face == 0 && (x <= 2 || x >= 13) && y <= 6 {
-				return shade(mul(hide, 0.6)) // horns
-			}
 		}
-		if (part == PartBody || part == PartExtra) && face == 0 && x >= 7 && x <= 8 && y%3 == 0 {
-			return shade(mul(hide, 0.5)) // spines along the back
+		if face == 1 {
+			// Belly plates.
+			if y%3 == 0 {
+				return shade(mul(belly, 0.75))
+			}
+			return shade(belly)
+		}
+		if (part == PartBody || part == PartExtra || part == PartArmL) && face == 0 && x >= 6 && x <= 9 {
+			return shade(mul(hide, 0.7)) // the darker ridge the spines stand on
 		}
 		return shade(hide)
 	case SkinSheep:
 		wool := col(232, 232, 226)
+		if part == PartArmL {
+			return shade(col(75, 65, 60)) // ears
+		}
 		if part == PartHead {
 			if face == 4 {
 				return eyes(col(75, 65, 60), col(20, 20, 20), true)
@@ -943,9 +1080,68 @@ func (s *Skins) DrawQuadruped(w *World, kind SkinKind, p *Pose) {
 	}
 	s.drawPart(kind, PartBody, body, rl.NewVector3(0, legH, 0), -0.5, 0, 0, 0, model, c)
 	headPos := rl.NewVector3(0, legH+body.Y-head.Y*0.4, body.Z/2+head.Z*0.3)
+	horse := kind == SkinHorse || kind == SkinHorseBlack || kind == SkinHorseWhite
+	if horse {
+		// A horse carries its head on a neck, up and forward of the shoulders.
+		headPos = rl.NewVector3(0, legH+body.Y+0.38, body.Z/2+0.34)
+		s.drawPart(kind, PartArmL, rl.NewVector3(0.26, 0.62, 0.32), rl.NewVector3(0, legH+body.Y*0.55, body.Z/2-0.16), -0.5, 0.55, 0, 0, model, c)
+		s.drawPart(kind, PartLegL, rl.NewVector3(0.08, 0.6, 0.1), rl.NewVector3(0, legH+body.Y*0.7, body.Z/2-0.32), -0.5, 0.55, 0, 0, model, c) // mane
+	}
 	s.drawPart(kind, PartHead, head, headPos, 0, -p.Pitch, 0, 0, model, c)
-	if kind == SkinPig {
+	// The small things that make each animal itself: ears, tails, horns, snouts.
+	// They borrow the part slots a quadruped does not otherwise use.
+	wag := float32(math.Sin(float64(p.Phase))) * 0.3 * p.Amp
+	top := headPos.Y + head.Y/2
+	back := rl.NewVector3(0, legH+body.Y*0.85, -body.Z/2)
+	ears := func(w, h, d, spread, tilt, lean float32) {
+		for _, sg := range []float32{-1, 1} {
+			s.drawPart(kind, PartArmL, rl.NewVector3(w, h, d), rl.NewVector3(sg*spread, top-0.02, headPos.Z-head.Z*0.15), -0.5, lean, 0, -sg*tilt, model, c)
+		}
+	}
+	tail := func(part int, thick, length, droop float32) {
+		s.drawPart(kind, part, rl.NewVector3(thick, length, thick), back, 0.5, droop, 0, wag, model, c)
+	}
+	switch kind {
+	case SkinPig:
 		s.drawPart(kind, PartExtra, rl.NewVector3(0.25, 0.18, 0.1), rl.Vector3Add(headPos, rl.NewVector3(0, -0.08, head.Z/2+0.03)), 0, 0, 0, 0, model, c)
+		ears(0.16, 0.14, 0.05, head.X/2-0.1, 0.35, 0.7)
+		// A curl of a tail.
+		s.drawPart(kind, PartArmR, rl.NewVector3(0.07, 0.16, 0.07), back, 0.5, 2.2, 0, wag, model, c)
+		s.drawPart(kind, PartArmR, rl.NewVector3(0.07, 0.07, 0.12), rl.Vector3Add(back, rl.NewVector3(0, 0.12, -0.1)), 0, 0, 0, 0, model, c)
+	case SkinCow:
+		for _, sg := range []float32{-1, 1} {
+			s.drawPart(kind, PartLegR, rl.NewVector3(0.08, 0.24, 0.08), rl.NewVector3(sg*(head.X/2-0.04), top-0.04, headPos.Z-0.02), -0.5, 0.2, 0, -sg*0.7, model, c) // horns
+			s.drawPart(kind, PartArmL, rl.NewVector3(0.2, 0.1, 0.05), rl.NewVector3(sg*(head.X/2+0.08), headPos.Y+0.08, headPos.Z-0.08), 0, 0, 0, -sg*0.3, model, c)  // ears
+		}
+		s.drawPart(kind, PartExtra, rl.NewVector3(0.38, 0.22, 0.12), rl.Vector3Add(headPos, rl.NewVector3(0, -0.12, head.Z/2+0.04)), 0, 0, 0, 0, model, c) // muzzle
+		s.drawPart(kind, PartLegL, rl.NewVector3(0.3, 0.14, 0.34), rl.NewVector3(0, legH+0.02, -body.Z*0.22), 0.5, 0, 0, 0, model, c)                      // udder
+		tail(PartArmR, 0.07, 0.62, 0.18)
+	case SkinSheep:
+		s.drawPart(kind, PartExtra, rl.NewVector3(head.X+0.08, 0.16, head.Z*0.75), rl.NewVector3(0, top-0.04, headPos.Z-head.Z*0.12), -0.5, 0, 0, 0, model, c) // woolly crown
+		for _, sg := range []float32{-1, 1} {
+			s.drawPart(kind, PartArmL, rl.NewVector3(0.16, 0.08, 0.06), rl.NewVector3(sg*(head.X/2+0.06), headPos.Y+0.06, headPos.Z-0.06), 0, 0, 0, sg*0.35, model, c)
+		}
+		tail(PartArmR, 0.14, 0.2, 0.3)
+	case SkinWolf:
+		ears(0.1, 0.17, 0.06, head.X/2-0.07, 0.12, -0.1)
+		s.drawPart(kind, PartExtra, rl.NewVector3(0.2, 0.17, 0.24), rl.Vector3Add(headPos, rl.NewVector3(0, -0.08, head.Z/2+0.1)), 0, 0, 0, 0, model, c) // muzzle
+		tail(PartArmR, 0.13, 0.55, 1.0+wag*0.5)
+	case SkinCat, SkinCatBlack, SkinCatTabby:
+		ears(0.1, 0.13, 0.05, head.X/2-0.06, 0.1, 0)
+		// The tail stands up and tips over at the end.
+		s.drawPart(kind, PartArmR, rl.NewVector3(0.07, 0.4, 0.07), back, -0.5, -0.35, 0, wag, model, c)
+		s.drawPart(kind, PartArmR, rl.NewVector3(0.07, 0.07, 0.2), rl.Vector3Add(back, rl.NewVector3(0, 0.4, -0.2)), 0, 0, 0, 0, model, c)
+	case SkinHorse, SkinHorseBlack, SkinHorseWhite:
+		for _, sg := range []float32{-1, 1} {
+			s.drawPart(kind, PartArmR, rl.NewVector3(0.07, 0.14, 0.05), rl.NewVector3(sg*(head.X/2-0.05), top-0.02, headPos.Z-head.Z*0.3), -0.5, 0, 0, -sg*0.15, model, c)
+		}
+		tail(PartLegL, 0.12, 0.75, 0.3)
+	case SkinKoala:
+		for _, sg := range []float32{-1, 1} {
+			s.drawPart(kind, PartArmL, rl.NewVector3(0.2, 0.2, 0.08), rl.NewVector3(sg*(head.X/2+0.04), top-0.08, headPos.Z-0.05), 0, 0, 0, 0, model, c) // round fluffy ears
+		}
+	case SkinWombat:
+		ears(0.1, 0.09, 0.05, head.X/2-0.06, 0.2, 0)
 	}
 	if p.Flash > 0 {
 		rl.DrawCubeV(rl.Vector3Add(p.Pos, rl.NewVector3(0, 0.5, 0)), rl.NewVector3(body.X+0.1, legH+body.Y+0.1, body.Z+0.1), rl.Fade(rl.White, p.Flash*0.6))

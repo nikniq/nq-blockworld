@@ -26,10 +26,17 @@ func saveShot(path string) {
 func (g *Game) showcaseStep(frame int, dir string) bool {
 	p := g.Player
 	look := func(pos rl.Vector3, yaw, pitch float32) {
-		settings.Creative, p.Flying = true, true
-		p.Pos, p.Yaw, p.Pitch = pos, yaw, pitch
-		p.Held = Item{Kind: ItemPickaxe}
+		g.showCam = [5]float32{pos.X, pos.Y, pos.Z, yaw, pitch}
 	}
+	// The camera is pinned every frame, so a nudge of the real mouse cannot spoil a picture.
+	defer func() {
+		if g.showCam != [5]float32{} && p != nil {
+			settings.Creative, p.Flying = true, true
+			p.Pos = rl.NewVector3(g.showCam[0], g.showCam[1], g.showCam[2])
+			p.Yaw, p.Pitch = g.showCam[3], g.showCam[4]
+			p.VelY = 0
+		}
+	}()
 	switch frame {
 	case 20:
 		g.Reset()
@@ -68,9 +75,55 @@ func (g *Game) showcaseStep(frame int, dir string) bool {
 		}
 	case 324:
 		saveShot(filepath.Join(dir, "showcase_dragons.png"))
+		// One dragon close up, three-quarter view.
+		x, y, z := g.showcaseOrigin()
+		look(rl.NewVector3(float32(x), float32(y)+17, float32(z)-2), 0, 0.05)
+		for i, d := range g.Dragons {
+			d.State = DragonDead
+			d.Pos = rl.NewVector3(float32(x)+float32(i-1)*60, float32(y)+18, float32(z)+16)
+			d.Vel = rl.NewVector3(-5, 0, -3)
+		}
+		g.showKind = (g.showKind + 1) % len(g.Dragons)
+		g.Dragons[g.showKind].Pos.X = float32(x)
+	case 326, 332, 338, 344:
+		for _, d := range g.Dragons {
+			d.State = DragonCircle
+		}
+	case 328, 334, 340, 346:
+		saveShot(filepath.Join(dir, "creature_"+g.Dragons[g.showKind].Name+".png"))
+		x, y, z := g.showcaseOrigin()
+		for i, d := range g.Dragons {
+			d.State = DragonDead
+			d.Pos = rl.NewVector3(float32(x)+float32(i-1)*60+200, float32(y)+18, float32(z)+16)
+		}
+		g.showKind = (g.showKind + 1) % len(g.Dragons)
+		g.Dragons[g.showKind].Pos.X = float32(x)
+		g.Dragons[g.showKind].Vel = rl.NewVector3(-5, 0, -3)
+	case 350:
+		g.parade([]AnimalKind{AnimalPig, AnimalCow, AnimalSheep, AnimalWolf, AnimalCat, AnimalHorse}, 2.6, 5)
+		x, y, z := g.showcaseOrigin()
+		look(rl.NewVector3(float32(x), float32(y)+1.0, float32(z)-2.5), 0, -0.05)
+	case 380:
+		saveShot(filepath.Join(dir, "creature_farm.png"))
+		g.parade([]AnimalKind{AnimalKangaroo, AnimalEmu, AnimalKoala, AnimalWombat, AnimalPlatypus, AnimalCrocodile}, 2.8, 5)
+	case 410:
+		saveShot(filepath.Join(dir, "creature_outback.png"))
+		g.parade([]AnimalKind{AnimalCompy, AnimalRaptor, AnimalDino, AnimalBronto}, 6, 12)
+		x, y, z := g.showcaseOrigin()
+		look(rl.NewVector3(float32(x), float32(y)+3, float32(z)-6), 0, 0)
+	case 440:
+		saveShot(filepath.Join(dir, "creature_dinos.png"))
 		return true
 	}
-	if frame > 20 && frame < 140 {
+	if frame >= 350 {
+		// Hold the parade still and the weather fair.
+		g.Enemies = nil
+		g.Sky.T = 0.25
+		for _, a := range g.Animals {
+			a.WanderT, a.Walking, a.Flee = 99, false, 0
+		}
+	}
+	if frame == 21 {
 		x, y, z := g.showcaseOrigin()
 		look(rl.NewVector3(float32(x)+0.5, float32(y)+7, float32(z)-5), 0, -0.4)
 	}
@@ -159,6 +212,24 @@ func (g *Game) buildShowcase() {
 	tree(14, 20, w.placeSpruce)
 	for _, d := range [][2]int{{8, 9}, {9, 10}, {11, 16}} {
 		set(d[0], 0, d[1], []Block{AcaciaSapling, PalmSapling, CherrySapling}[(d[0]+d[1])%3])
+	}
+}
+
+// parade replaces the animals with a row of the given kinds on the open
+// front of the stage, standing still at an angle to the camera.
+func (g *Game) parade(kinds []AnimalKind, gap, dist float32) {
+	x, y, z := g.showcaseOrigin()
+	g.Animals = nil
+	for i, k := range kinds {
+		px := float32(x) + (float32(i)-float32(len(kinds)-1)/2)*gap
+		a := NewAnimal(rl.NewVector3(px, float32(y), float32(z)-2.5+dist), k)
+		a.Heading = rl.Vector3Normalize(rl.NewVector3(0.8, 0, -0.6))
+		a.WanderT = 99
+		a.Walking = false
+		if k == AnimalCat || k == AnimalWolf || k == AnimalHorse {
+			a.Tamed = true
+		}
+		g.Animals = append(g.Animals, a)
 	}
 }
 

@@ -507,24 +507,80 @@ func (g *Game) dragonFalls(d *Dragon) {
 
 // ---------- drawing ----------
 
-// DrawDragon draws a dragon: long body, neck and head, tail, two flapping wings, tucked legs.
+// DrawDragon draws a dragon: body, neck and horned head with a jaw that
+// opens to breathe, a row of spines down the back, wings hinged at the
+// shoulder and wrist with bones along the leading edge, clawed legs, and a
+// two-part tail ending in a spade. Each kind has its own crest.
 func (s *Skins) DrawDragon(w *World, p *Pose, kind DragonKind, flap float32) {
 	s.init(w)
 	model := modelMatrix(p)
 	c := lightColor(w, p.Pos, p.Alpha)
 	k := [numDragonKinds]SkinKind{SkinDragon, SkinFrostDragon, SkinEarthDragon, SkinWaterDragon}[kind]
-	wing := float32(math.Sin(float64(flap))) * 0.6
-	s.drawPart(k, PartBody, rl.NewVector3(1.2, 1.0, 3.2), rl.NewVector3(0, 0, 0), 0, 0, 0, 0, model, c)
-	s.drawPart(k, PartArmL, rl.NewVector3(0.8, 0.7, 1.6), rl.NewVector3(0, 0.3, 2.2), 0, -0.4+p.Pitch, 0, 0, model, c) // neck
-	s.drawPart(k, PartHead, rl.NewVector3(0.9, 0.7, 1.5), rl.NewVector3(0, 0.9, 3.4), 0, -0.1+p.Pitch+p.Swing*0.5, 0, 0, model, c)
-	s.drawPart(k, PartExtra, rl.NewVector3(0.7, 0.6, 2.2), rl.NewVector3(0, 0.1, -2.6), 0, 0.15, float32(math.Sin(float64(flap*0.5)))*0.2, 0, model, c)
-	s.drawPart(k, PartExtra, rl.NewVector3(0.4, 0.35, 2.2), rl.NewVector3(0, 0.3, -4.7), 0, 0.25, float32(math.Sin(float64(flap*0.5)))*0.4, 0, model, c)
+	v := rl.NewVector3
+	sin := func(a float32) float32 { return float32(math.Sin(float64(a))) }
+	cos := func(a float32) float32 { return float32(math.Cos(float64(a))) }
+	sway := sin(flap * 0.5)
+
+	// Body, neck, head and jaw.
+	s.drawPart(k, PartBody, v(1.2, 1.0, 3.2), v(0, 0, 0), 0, 0, 0, 0, model, c)
+	s.drawPart(k, PartArmL, v(0.8, 0.7, 1.6), v(0, 0.3, 2.2), 0, -0.4+p.Pitch, 0, 0, model, c)
+	headRot := -0.1 + p.Pitch + p.Swing*0.3
+	s.drawPart(k, PartHead, v(0.9, 0.62, 1.5), v(0, 0.95, 3.4), 0, headRot, 0, 0, model, c)
+	open := p.Swing
+	s.drawPart(k, PartLegFR, v(0.74, 0.16, 1.2), v(0, 0.55-open*0.12, 3.45), 0, headRot+0.1+open*0.5, 0, 0, model, c)
+
+	// Crest: what grows from the head and back differs by kind.
+	hornLen, hornThick, spineH, spineW := float32(0.95), float32(0.13), float32(0.4), float32(0.1)
+	switch kind {
+	case DragonFrost:
+		hornLen, spineH = 0.75, 0.34
+	case DragonEarth:
+		hornLen, hornThick, spineH, spineW = 0.55, 0.2, 0.22, 0.34
+	case DragonWater:
+		hornLen, hornThick, spineH, spineW = 0.5, 0.1, 0.66, 0.06
+	}
 	for _, sg := range []float32{-1, 1} {
-		// Wings pivot at the shoulder and flap about the body axis.
-		s.drawPart(k, PartArmR, rl.NewVector3(3.2, 0.12, 2.2), rl.NewVector3(sg*0.6, 0.45, 0.4), 0, 0, 0, sg*(0.3+wing), model, c)
-		s.drawPart(k, PartArmR, rl.NewVector3(2.4, 0.1, 1.6), rl.NewVector3(sg*3.6, 0.45+sg*0, 0.3), 0, 0, 0, sg*(0.3+wing)*1.6, model, c)
-		s.drawPart(k, PartLegL, rl.NewVector3(0.3, 0.8, 0.3), rl.NewVector3(sg*0.45, -0.5, -0.6), 0.5, 1.0, 0, 0, model, c)
-		s.drawPart(k, PartLegL, rl.NewVector3(0.25, 0.6, 0.25), rl.NewVector3(sg*0.4, -0.5, 1.0), 0.5, 1.1, 0, 0, model, c)
+		s.drawPart(k, PartLegR, v(hornThick, hornLen, hornThick), v(sg*0.3, 1.22, 2.95), -0.5, -1.05, 0, -sg*0.35, model, c)
+		switch kind {
+		case DragonFrost: // a second pair, like icicles
+			s.drawPart(k, PartLegR, v(0.1, 0.5, 0.1), v(sg*0.42, 1.1, 3.15), -0.5, -0.8, 0, -sg*0.9, model, c)
+		case DragonWater: // fins behind the jaw
+			s.drawPart(k, PartLegFL, v(0.05, 0.6, 0.55), v(sg*0.45, 0.85, 2.85), -0.5, -0.5, 0, -sg*1.0, model, c)
+		}
+	}
+	if kind == DragonEarth { // a horn on the snout
+		s.drawPart(k, PartLegR, v(0.18, 0.42, 0.18), v(0, 1.22, 3.95), -0.5, 0.25, 0, 0, model, c)
+	}
+	for i, sp := range [][2]float32{{2.55, 0.92}, {1.95, 0.72}, {1.25, 0.5}, {0.6, 0.5}, {-0.05, 0.5}, {-0.7, 0.5}, {-1.35, 0.5}, {-2.0, 0.42}, {-2.65, 0.46}} {
+		h := spineH * (1 - 0.25*float32(math.Abs(float64(i-4)))/4)
+		s.drawPart(k, PartLegFL, v(spineW, h, 0.36), v(0, sp[1]-0.03, sp[0]), -0.5, -0.4, 0, 0, model, c)
+	}
+
+	// Tail: two swaying sections and the spade.
+	s.drawPart(k, PartExtra, v(0.7, 0.6, 2.2), v(0, 0.1, -2.6), 0, 0.15, sway*0.2, 0, model, c)
+	t2 := sway * 0.4
+	s.drawPart(k, PartExtra, v(0.4, 0.35, 2.2), v(0, 0.3, -4.7), 0, 0.25, t2, 0, model, c)
+	s.drawPart(k, PartLegBR, v(1.0, 0.08, 0.95), v(-1.35*sin(t2), 0.62, -4.7-1.35*cos(t2)), 0, 0.25, t2, 0, model, c)
+
+	// Wings: an inner and an outer panel, hinged, each with a bone on its leading edge.
+	a := 0.3 + sin(flap)*0.6
+	b := a*1.6 - 0.25
+	const l1, l2 = 3.0, 2.6
+	for _, sg := range []float32{-1, 1} {
+		sx, sy, sz := sg*0.55, float32(0.5), float32(0.35)
+		c1 := v(sx+sg*l1/2*cos(a), sy+l1/2*sin(a), sz)
+		tip := v(sx+sg*l1*cos(a), sy+l1*sin(a), sz)
+		c2 := v(tip.X+sg*l2/2*cos(b), tip.Y+l2/2*sin(b), sz)
+		s.drawPart(k, PartArmR, v(l1, 0.06, 2.2), v(c1.X, c1.Y, c1.Z-0.35), 0, 0, 0, sg*a, model, c)
+		s.drawPart(k, PartArmR, v(l2, 0.05, 1.6), v(c2.X, c2.Y, c2.Z-0.55), 0, 0, 0, sg*b, model, c)
+		s.drawPart(k, PartLegBL, v(l1+0.1, 0.17, 0.17), v(c1.X, c1.Y, c1.Z+0.75), 0, 0, 0, sg*a, model, c)
+		s.drawPart(k, PartLegBL, v(l2, 0.13, 0.13), v(c2.X, c2.Y, c2.Z+0.25), 0, 0, 0, sg*b, model, c)
+		s.drawPart(k, PartLegR, v(0.12, 0.12, 0.5), v(tip.X, tip.Y+0.06, tip.Z+1.0), 0, 0.2, 0, 0, model, c) // wrist claw
+		// Legs tucked back in flight, with claws.
+		s.drawPart(k, PartLegL, v(0.3, 0.8, 0.3), v(sg*0.45, -0.5, -0.6), 0.5, 1.0, 0, 0, model, c)
+		s.drawPart(k, PartLegR, v(0.32, 0.1, 0.3), v(sg*0.45, -0.95, -1.38), 0, 1.0, 0, 0, model, c)
+		s.drawPart(k, PartLegL, v(0.25, 0.6, 0.25), v(sg*0.4, -0.5, 1.0), 0.5, 1.1, 0, 0, model, c)
+		s.drawPart(k, PartLegR, v(0.27, 0.09, 0.26), v(sg*0.4, -0.78, 0.4), 0, 1.1, 0, 0, model, c)
 	}
 	if p.Flash > 0 {
 		rl.DrawCubeV(p.Pos, rl.NewVector3(3, 2, 7), rl.Fade(rl.White, p.Flash*0.4))

@@ -160,7 +160,9 @@ type Game struct {
 	Chatting       bool
 	PlayerList     []PlayerState // last known players (for the P overlay)
 	AutoSaveT      float32
-	showY          int // ground level of the showcase stage
+	showY          int        // ground level of the showcase stage
+	showKind       int        // which dragon the showcase is photographing
+	showCam        [5]float32 // pinned showcase camera: position, yaw, pitch
 	netTestCell    [3]int
 	netTestWas     Block
 	Remotes        map[uint32]*RemotePlayer
@@ -2474,6 +2476,9 @@ func (g *Game) drawBlockIcon(b Block, x, y, size int32) {
 }
 
 func (g *Game) drawWeapon() {
+	if showcaseDir() != "" {
+		return // nothing in hand to hide the view
+	}
 	sw, sh := float32(rl.GetScreenWidth()), float32(rl.GetScreenHeight())
 	p := g.Player
 	bobX := float32(math.Sin(float64(p.BobPhase))) * 6 * p.BobAmount
