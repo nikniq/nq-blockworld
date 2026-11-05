@@ -57,6 +57,10 @@ func (g *Game) showcaseStep(frame int, dir string) bool {
 	case 260:
 		saveShot(filepath.Join(dir, "showcase_pen.png"))
 		x, y, z := g.showcaseOrigin()
+		look(rl.NewVector3(float32(x)+0.5, float32(y)+2.4, float32(z)-1.5), 0, -0.42)
+	case 290:
+		saveShot(filepath.Join(dir, "showcase_home.png"))
+		x, y, z := g.showcaseOrigin()
 		look(rl.NewVector3(float32(x)+11, float32(y)+6, float32(z)+1), 0, -0.05)
 	case 320:
 		saveShot(filepath.Join(dir, "showcase_trees.png"))
@@ -200,6 +204,20 @@ func (g *Game) buildShowcase() {
 			g.applyBucket(sx+dx, y-1, sz+dz, Water)
 		}
 	}
+	// Homewares: a long table with chairs and a vase, a bunk bed, and every wild flower.
+	set(-1, 0, 3, Table)
+	set(0, 0, 3, Table)
+	set(0, 1, 3, Vase)
+	set(-1, 0, 2, Chair)
+	set(0, 0, 4, Chair)
+	set(1, 0, 3, Chair)
+	set(3, 0, 4, Planks)
+	set(3, 1, 4, Planks)
+	w.SetBunk(sx+3, y, sz+3)
+	for i, f := range flowerKinds {
+		set(-5+i, 0, 1, f)
+	}
+	set(-3, 0, 4, Chair) // on its own: back to nothing in particular
 	// One of every tree.
 	tree := func(dx, dz int, place func(x, y, z int, set func(x, y, z int, b Block))) {
 		place(sx+dx-originX, y, sz+dz-originZ, func(lx, yy, lz int, b Block) { w.Set(lx+originX, yy, lz+originZ, b) })

@@ -146,8 +146,18 @@ func (w *World) buildHouse(x, z, base, fx, fz int) {
 	w.setDoorLocal(x+dx, base, z+dz)
 	w.setLocal(x+dx+fx, base, z+dz+fz, Air)
 	w.setLocal(x+dx+fx+fz, base, z+dz+fz+fx, Torch)
-	// Bed against the back wall, torch inside, sometimes a crate.
-	w.setLocal(x-fx*(hw-1), base, z-fz*(hd-1), Bed)
+	// Bed against the back wall (a bunk in some houses), torch inside, sometimes a crate.
+	if rand.Intn(3) == 0 {
+		w.setLocal(x-fx*(hw-1), base, z-fz*(hd-1), BunkBed)
+		w.setLocal(x-fx*(hw-1), base+1, z-fz*(hd-1), BunkTop)
+	} else {
+		w.setLocal(x-fx*(hw-1), base, z-fz*(hd-1), Bed)
+	}
+	// A table in the back corner with a vase of flowers on it and a chair drawn up.
+	tx, tz := x-fx*(hw-1)+fz*(hw-1), z-fz*(hd-1)+fx*(hd-1)
+	w.setLocal(tx, base, tz, Table)
+	w.setLocal(tx, base+1, tz, Vase)
+	w.setLocal(tx+fx, base, tz+fz, Chair)
 	w.setLocal(x+fz*(hw-1), base+1, z+fx*(hd-1), Torch)
 	if rand.Intn(2) == 0 {
 		w.setLocal(x-fz*(hw-1), base, z-fx*(hd-1), Crate)
@@ -197,7 +207,7 @@ var quests = []Quest{
 func (g *Game) spawnVillagers() {
 	w := g.World
 	for i, b := range w.Blocks {
-		if b != Bed {
+		if b != Bed && b != BunkBed {
 			continue
 		}
 		x := i%worldW + originX

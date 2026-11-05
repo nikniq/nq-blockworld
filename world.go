@@ -143,6 +143,15 @@ const (
 	Melon
 	MelonSlice
 	PumpkinPie
+	BunkBed
+	BunkTop
+	Table
+	Chair
+	Vase
+	FlowerYellow
+	FlowerBlue
+	FlowerWhite
+	FlowerPink
 	numBlocks
 )
 
@@ -188,6 +197,7 @@ var (
 	doorOpenBox   = [2][3]float32{{0, 0, 0}, {0.2, 1, 1}}
 	fencePostBox  = [2][3]float32{{0.375, 0, 0.375}, {0.625, 1.5, 0.625}}
 	trapdoorBox   = [2][3]float32{{0, 0, 0}, {1, trapdoorH, 1}}
+	furnitureBox  = [2][3]float32{{0.1, 0, 0.1}, {0.9, 0.8, 0.9}} // held and dropped furniture
 )
 
 const trapdoorH = 0.1875 // a closed trapdoor is a thin slab at the bottom of its cell
@@ -569,6 +579,24 @@ var blocks = [numBlocks]blockInfo{
 		Pat: [3]texPattern{PatMelonSlice, PatMelonSlice, PatMelonSlice}, MineTime: 0.1, Drops: MelonSlice, Food: 2},
 	PumpkinPie: {Name: "Pumpkin Pie", Top: col(225, 160, 80), Side: col(225, 160, 80), Bottom: col(225, 160, 80),
 		Pat: [3]texPattern{PatPie, PatPie, PatPie}, MineTime: 0.1, Drops: PumpkinPie, Food: 8},
+	BunkBed: {Name: "Bunk Bed", Top: col(190, 40, 40), Side: col(150, 110, 70), Bottom: col(150, 110, 70),
+		Pat: [3]texPattern{PatBunk, PatBunk, PatBunk}, MineTime: 0.5, Drops: BunkBed, Solid: true, Tiny: true, Box: &furnitureBox},
+	BunkTop: {Name: "Bunk Bed", Top: col(190, 40, 40), Side: col(150, 110, 70), Bottom: col(150, 110, 70),
+		Pat: [3]texPattern{PatBunk, PatBunk, PatBunk}, MineTime: 0.5, Drops: Air, Solid: true, Tiny: true, Box: &furnitureBox},
+	Table: {Name: "Table", Top: col(186, 148, 88), Side: col(150, 110, 70), Bottom: col(150, 110, 70),
+		Pat: [3]texPattern{PatTable, PatTable, PatTable}, MineTime: 0.6, Drops: Table, Solid: true, Tiny: true, Box: &furnitureBox},
+	Chair: {Name: "Chair", Top: col(186, 148, 88), Side: col(150, 110, 70), Bottom: col(150, 110, 70),
+		Pat: [3]texPattern{PatChair, PatChair, PatChair}, MineTime: 0.5, Drops: Chair, Solid: true, Tiny: true, Box: &furnitureBox},
+	Vase: {Name: "Flower Vase", Top: col(190, 95, 50), Side: col(190, 95, 50), Bottom: col(190, 95, 50),
+		Pat: [3]texPattern{PatVase, PatVase, PatVase}, MineTime: 0.1, Drops: Vase, Tiny: true, Box: &saplingBox},
+	FlowerYellow: {Name: "Dandelion", Top: col(245, 210, 50), Side: col(245, 210, 50), Bottom: col(245, 210, 50),
+		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerYellow, Tiny: true, Box: &plantBox, Cross: true},
+	FlowerBlue: {Name: "Cornflower", Top: col(70, 110, 230), Side: col(70, 110, 230), Bottom: col(70, 110, 230),
+		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerBlue, Tiny: true, Box: &plantBox, Cross: true},
+	FlowerWhite: {Name: "Daisy", Top: col(245, 245, 240), Side: col(245, 245, 240), Bottom: col(245, 245, 240),
+		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerWhite, Tiny: true, Box: &plantBox, Cross: true},
+	FlowerPink: {Name: "Tulip", Top: col(240, 120, 170), Side: col(240, 120, 170), Bottom: col(240, 120, 170),
+		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerPink, Tiny: true, Box: &plantBox, Cross: true},
 }
 
 // Opaque reports whether a block hides the faces of its neighbours.
@@ -587,7 +615,11 @@ func (b Block) lightCost() uint8 {
 
 // Placeable reports whether the player may hold and place this block.
 func (b Block) Placeable() bool {
-	return b != Air && b != Water && b != Lava && blocks[b].Food == 0 && !blocks[b].Item
+	switch b {
+	case Air, Water, Lava, DoorTop, DoorTopOpen, BunkTop:
+		return false // liquids, and the upper halves that their lower halves place
+	}
+	return blocks[b].Food == 0 && !blocks[b].Item
 }
 
 // Liquid reports whether a block is water or lava: not solid, swimmable, replaceable.
@@ -1348,7 +1380,7 @@ func (w *World) generate(seed int) {
 				w.placeTree(x, h, z, w.setLocal)
 			case top == Grass && r < 0.045:
 				w.placeAcacia(x, h, z, w.setLocal)
-			case top == Grass && r < 0.06:
+			case top == Grass && r < 0.075:
 				// Wild vegetables: a carrot or beetroot patch, the odd pumpkin.
 				switch rand.Intn(3) {
 				case 0:
@@ -1361,7 +1393,7 @@ func (w *World) generate(seed int) {
 			case top == Grass && r < 0.45:
 				w.setLocal(x, h, z, TallGrass)
 			case top == Grass && r < 0.55:
-				w.setLocal(x, h, z, Flower)
+				w.setLocal(x, h, z, flowerKinds[rand.Intn(len(flowerKinds))])
 			}
 		case BiomeForest:
 			switch {
@@ -2394,13 +2426,26 @@ func (w *World) meshChunk(ci, cj int, c *chunk) {
 						c.opaque[y/sectionH].emitCross(b, wx, float32(y), wz, box[1][1], l, biomeTintCode(b, &faces[0], w.Biome[lz*worldW+lx]))
 						continue
 					}
+					if b == BunkTop {
+						continue // drawn by the lower bunk
+					}
 					boxes := [][2][3]float32{box}
+					var tex []Block
 					if b == Fence {
 						boxes = w.fenceBoxes(lx, y, lz)
+					} else if fb, ft := w.furnitureBoxes(lx, y, lz, b); fb != nil {
+						boxes, tex = fb, ft
 					}
-					for _, box := range boxes {
+					if b == Vase {
+						c.opaque[y/sectionH].emitCross(b, wx, float32(y)+0.3, wz, 0.65, l, 255) // the flowers
+					}
+					for bi, box := range boxes {
+						tb := b
+						if bi < len(tex) {
+							tb = tex[bi]
+						}
 						for fi := range faces {
-							c.opaque[y/sectionH].emitFace(&faces[fi], b, wx, float32(y), wz, box, 1, [4]int{3, 3, 3, 3}, [4]cornerLight{l, l, l, l})
+							c.opaque[y/sectionH].emitFace(&faces[fi], tb, wx, float32(y), wz, box, 1, [4]int{3, 3, 3, 3}, [4]cornerLight{l, l, l, l})
 							if code := biomeTintCode(b, &faces[fi], w.Biome[lz*worldW+lx]); code != 255 {
 								c.opaque[y/sectionH].setLastFaceAlpha(code)
 							}
@@ -2961,6 +3006,12 @@ func (w *World) cellTop(x, y, z int) float32 {
 	switch b := w.Get(x, y, z); {
 	case b == TrapdoorClosed:
 		return trapdoorH
+	case b == Table:
+		return tableTop
+	case b == Chair:
+		return chairTop
+	case b == BunkBed || b == BunkTop:
+		return bunkTop
 	case blocks[b].Solid:
 		return 1
 	case y > 0 && w.Get(x, y-1, z) == Fence:

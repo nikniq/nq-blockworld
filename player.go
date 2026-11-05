@@ -89,6 +89,7 @@ type Player struct {
 	Sneak     bool
 	Sprinting bool
 	EyeOff    float32 // eye height offset while sneaking (smoothed)
+	Sitting   bool    // seated on a chair: the view is lowered until the player moves
 
 	HP        int
 	Ammo      int
@@ -524,6 +525,12 @@ func (p *Player) Update(dt float32, w *World) {
 	target := float32(0)
 	if p.Sneak {
 		target = 0.3
+	}
+	if p.Sitting {
+		if rl.Vector3Length(move) > 0 || rl.IsKeyPressed(rl.KeySpace) {
+			p.Sitting = false // any step stands you up
+		}
+		target = 0.5
 	}
 	p.EyeOff = lerp(p.EyeOff, target, dt*12)
 

@@ -86,6 +86,10 @@ const (
 	PatMelonTop
 	PatMelonSlice
 	PatPie
+	PatTable
+	PatChair
+	PatBunk
+	PatVase
 )
 
 const (
@@ -625,7 +629,8 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 		}
 		return mul(base, 0.8+0.3*n)
 	case PatFence, PatBucket, PatWaterBucket, PatDoorHigh, PatTrapdoor, PatPalmSide, PatCoconut, PatCarrot, PatCarrotCrop,
-		PatBeet, PatBeetCrop, PatStem, PatPumpkin, PatPumpkinTop, PatMelon, PatMelonTop, PatMelonSlice, PatPie:
+		PatBeet, PatBeetCrop, PatStem, PatPumpkin, PatPumpkinTop, PatMelon, PatMelonTop, PatMelonSlice, PatPie,
+		PatTable, PatChair, PatBunk, PatVase:
 		return texelPixel(p, base, info, x, y, seed)
 	default:
 		return paint(base, fx, fy, seed, 0.3, false)
@@ -1068,6 +1073,62 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 				return rl.NewColor(40, 30, 30, 255) // seeds
 			}
 			return mul(base, 0.85+0.3*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatTable:
+		// Side view: a top on two legs.
+		if y >= 4 && y <= 5 {
+			return mul(base, 0.95+0.2*n)
+		}
+		if y > 5 && (x == 2 || x == 3 || x == 12 || x == 13) {
+			return mul(base, 0.7+0.15*n)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatChair:
+		// Side view: back, seat and legs.
+		if x >= 3 && x <= 4 && y >= 1 {
+			return mul(base, 0.7+0.15*n)
+		}
+		if y >= 8 && y <= 9 && x >= 3 && x <= 12 {
+			return mul(base, 0.95+0.2*n)
+		}
+		if x >= 11 && x <= 12 && y > 9 {
+			return mul(base, 0.7+0.15*n)
+		}
+		if (y == 3 || y == 5) && x == 5 {
+			return mul(base, 0.85)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatBunk:
+		// Two bunks between posts, with red blankets.
+		if x <= 1 || x >= 14 {
+			return mul(base, 0.65+0.15*n)
+		}
+		for _, top := range []int{3, 10} {
+			if y == top+2 {
+				return mul(base, 0.9+0.15*n) // frame
+			}
+			if y >= top && y < top+2 {
+				if x <= 4 {
+					return rl.NewColor(235, 235, 228, 255) // pillow
+				}
+				return mul(rl.NewColor(190, 40, 40, 255), 0.85+0.3*n)
+			}
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatVase:
+		// A bunch of flowers on their stems; the pot is drawn below them.
+		for i, c := range [][3]int{{4, 3, 0}, {8, 2, 1}, {12, 4, 2}, {6, 6, 3}, {10, 7, 4}} {
+			d := (x-c[0])*(x-c[0]) + (y-c[1])*(y-c[1])
+			if d == 0 {
+				return rl.NewColor(250, 225, 70, 255)
+			}
+			if d <= 2 {
+				return mul(blocks[flowerKinds[i]].Top, 0.9+0.2*n)
+			}
+			if x == c[0] && y > c[1] {
+				return mul(rl.NewColor(70, 140, 50, 255), 0.85+0.3*n)
+			}
 		}
 		return rl.NewColor(0, 0, 0, 0)
 	case PatPie:

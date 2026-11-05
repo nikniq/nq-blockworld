@@ -501,6 +501,10 @@ func (g *Game) hostHandle(from uint32, m *Msg) {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
 			} else if pl.B == DoorClosed && t == Air && w.Get(pl.X, pl.Y+1, pl.Z) == Air && !g.blockOccupied(pl.X, pl.Y, pl.Z) && !g.blockOccupied(pl.X, pl.Y+1, pl.Z) {
 				w.SetDoor(pl.X, pl.Y, pl.Z, false)
+			} else if pl.B == BunkBed {
+				if t == Air && w.Get(pl.X, pl.Y+1, pl.Z) == Air && !g.blockOccupied(pl.X, pl.Y, pl.Z) && !g.blockOccupied(pl.X, pl.Y+1, pl.Z) {
+					w.SetBunk(pl.X, pl.Y, pl.Z)
+				}
 			} else if (pl.B.Placeable() || crop) && (t == Air || (t.Liquid() && !blocks[pl.B].Tiny)) && !(blocks[pl.B].Solid && g.blockOccupied(pl.X, pl.Y, pl.Z)) {
 				w.Set(pl.X, pl.Y, pl.Z, pl.B)
 			} else if (pl.B == Water && (t == Air || t == Lava)) || (pl.B == Air && t == Water) {

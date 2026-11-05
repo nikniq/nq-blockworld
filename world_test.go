@@ -817,7 +817,7 @@ func TestVillages(t *testing.T) {
 		switch b {
 		case DoorClosed, DoorOpen:
 			doors++
-		case Bed:
+		case Bed, BunkBed:
 			beds++
 		}
 	}
@@ -1273,6 +1273,12 @@ func TestFactions(t *testing.T) {
 	}
 	p := g.Player
 	p.Pos = g.Flags[fi].Pos
+	p.HP = maxHealth
+	for _, a := range g.Animals {
+		if WrapDist(a.Pos, g.Flags[fi].Pos) < 8 {
+			a.Alive = false // a warband that happened to arrive first would contest it
+		}
+	}
 	for i := 0; i < 100; i++ {
 		g.captureTick(0.1)
 	}
@@ -1718,5 +1724,61 @@ func TestWorldSlots(t *testing.T) {
 	}
 	if _, err := os.Stat(savePathFor(0)); err != nil {
 		t.Fatal("slot 1 should be untouched")
+	}
+}
+
+// Furniture: tables share legs, chairs face the table, bunks are two tall, and you stand at their real heights.
+func TestFurniture(t *testing.T) {
+	rand.Seed(5)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	w := g.World
+	x, z := floorI(g.Spawn.X)+5, floorI(g.Spawn.Z)-5
+	y := w.SurfaceY(x, z)
+	for dx := -2; dx <= 3; dx++ {
+		for dz := -2; dz <= 2; dz++ {
+			w.Set(x+dx, y-1, z+dz, Planks)
+			for yy := y; yy < y+4; yy++ {
+				w.Set(x+dx, yy, z+dz, Air)
+			}
+		}
+	}
+	lx, lz := x-originX, z-originZ
+	w.Set(x, y, z, Table)
+	if b, _ := w.furnitureBoxes(lx, y, lz, Table); len(b) != 5 {
+		t.Fatalf("a lone table is a top and four legs, got %d boxes", len(b))
+	}
+	w.Set(x+1, y, z, Table)
+	if b, _ := w.furnitureBoxes(lx, y, lz, Table); len(b) != 3 {
+		t.Fatalf("a table joined to another keeps two legs, got %d boxes", len(b))
+	}
+	w.Set(x, y, z-1, Chair)
+	if dx, dz := w.chairBack(lx, y, lz-1); dx != 0 || dz != -1 {
+		t.Fatalf("a chair's back should be on the side away from the table: %d,%d", dx, dz)
+	}
+	pos, res := w.MoveBox(rl.NewVector3(float32(x)+0.5, float32(y)+2, float32(z)+0.5), 0.3, 1.8, rl.NewVector3(0, -3, 0), false)
+	if !res.Ground || math.Abs(float64(pos.Y-(float32(y)+tableTop))) > 0.01 {
+		t.Fatalf("should stand on the table top, got y %v", pos.Y-float32(y))
+	}
+	g.applyPlace(x+3, y, z, BunkBed)
+	if w.Get(x+3, y, z) != BunkBed || w.Get(x+3, y+1, z) != BunkTop || !isBed(w.Get(x+3, y+1, z)) {
+		t.Fatal("a bunk bed is two blocks tall and both halves are a bed")
+	}
+	g.breakBlock(x+3, y+1, z)
+	bunks := 0
+	for _, d := range g.Drops {
+		if d.Block == BunkBed {
+			bunks++
+		}
+	}
+	if w.Get(x+3, y, z) != Air || bunks != 1 {
+		t.Fatalf("breaking the top bunk removes both and drops one bunk bed, got %d", bunks)
+	}
+	g.sit(x, y, z-1)
+	if !g.Player.Sitting || g.Player.Pos.Y != float32(y)+chairTop {
+		t.Fatal("sitting puts the player on the seat")
+	}
+	if BunkTop.Placeable() || !Table.Placeable() {
+		t.Fatal("only the lower halves are placed by hand")
 	}
 }

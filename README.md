@@ -139,6 +139,15 @@ block textures and sound effects are generated at startup.
   window above, and hang themselves in the doorway: closed, a door spans the gap between its walls;
   open, it swings back flat against the hinge side. Right click either half to open or close it; closed
   doors stop hostiles and arrows. Breaking either half takes the whole door down.
+- **Homewares**: furnish what you build. A **table** (three planks) is a top on four legs, and tables
+  set side by side join into one long table that shares its legs. **Chairs** (three planks make two)
+  turn to face a table beside them, or put their backs to a wall; right click one to sit, and move to
+  stand up. A **bunk bed** (two beds and two planks) stacks two bunks between four posts with a ladder
+  up the open side, sleeps and sets your spawn like a bed, and is two blocks tall. A **flower vase**
+  (two flowers and red sand, or sand) puts a bunch of flowers on a table or a windowsill. There are
+  five wild flowers to pick: poppy, dandelion, cornflower, daisy and tulip. You stand on tables and
+  chairs at their real height. Village houses come furnished with a table, a chair and a vase, and
+  some have bunks.
 - **Trapdoors**: three planks make two. A trapdoor is a thin hatch you place in a floor or a wall and
   stand on at its real height; right click and it stands up against the nearest wall, opening the way
   down a ladder or a drop into the mine. Closed, it keeps mobs from falling in after you.

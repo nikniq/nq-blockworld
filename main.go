@@ -965,7 +965,11 @@ func (g *Game) updateBuilder(dt float32) {
 			return
 		}
 	}
-	if usePressed() && w.Get(a.X, a.Y, a.Z) == Bed {
+	if usePressed() && w.Get(a.X, a.Y, a.Z) == Chair {
+		g.sit(a.X, a.Y, a.Z)
+		return
+	}
+	if usePressed() && isBed(w.Get(a.X, a.Y, a.Z)) {
 		g.Spawn = rl.NewVector3(float32(a.X)+0.5, float32(a.Y)+0.5, float32(a.Z)+0.5)
 		if g.isClient() {
 			g.say("Spawn point set. Only the host can skip the night", 2)
@@ -983,8 +987,8 @@ func (g *Game) updateBuilder(dt float32) {
 			below := w.Get(x, y-1, z)
 			free = free && (below == Grass || below == Dirt)
 		}
-		if p.Held.Block == DoorClosed {
-			// Doors are two blocks tall.
+		if p.Held.Block == DoorClosed || p.Held.Block == BunkBed {
+			// Doors and bunk beds are two blocks tall.
 			free = free && w.Get(x, y+1, z) == Air && !g.blockOccupied(x, y+1, z)
 		}
 		if p.Held.Block == Ladder {
@@ -1023,6 +1027,8 @@ func (g *Game) applyPlace(x, y, z int, b Block) {
 	switch b {
 	case DoorClosed, DoorOpen:
 		g.World.SetDoor(x, y, z, b == DoorOpen)
+	case BunkBed:
+		g.World.SetBunk(x, y, z)
 	default:
 		g.World.Set(x, y, z, b)
 	}
@@ -1033,6 +1039,14 @@ func (g *Game) breakBlock(x, y, z int) {
 	b := g.World.Get(x, y, z)
 	if b == Air {
 		return
+	}
+	if b == BunkBed {
+		g.World.Set(x, y+1, z, Air)
+	} else if b == BunkTop {
+		g.World.Set(x, y-1, z, Air)
+		if !settings.Creative {
+			g.spawnDrop(rl.NewVector3(float32(x)+0.5, float32(y)-0.5, float32(z)+0.5), BunkBed, 0)
+		}
 	}
 	if isDoor(b) {
 		// Both halves go, and the top half drops the door if it was the one broken.
@@ -2977,6 +2991,7 @@ func (g *Game) drawHelp(sw, sh int32) {
 		"Wolves: feed one meat or fish twice to tame it. Cats: a fish tames one; right click to sit or follow. Fishing rod: planks and wool.",
 		"Horses (plains): feed wheat, bread or apples twice, then right click to ride; SPACE jumps, CTRL gallops, SHIFT dismounts. Boat: 5 planks.",
 		"Fences (3 planks): a block and a half tall, nothing jumps them. Bucket (3 iron, coal): right click water to scoop it, right click again to pour; water quenches lava to cobblestone.",
+		"Homewares: tables (3 planks) join into long ones, chairs (3 planks make 2) face the table and you can sit on them (right click), bunk beds (2 beds, 2 planks) sleep like a bed, flower vases (2 flowers and red sand or sand). Five kinds of wild flower.",
 		"Doors are two blocks tall and hang in a doorway; trapdoors (3 planks make 2) are hatches you can stand on, right click to open. Acacia, palm and cherry trees drop their own saplings; palms drop coconuts.",
 		"Crops: plant wheat seeds, carrots or beetroot on grass or dirt (right click), pumpkin and melon seeds grow vines that set fruit beside them. Pumpkin and wheat bake a pie. Wild patches grow on the plains, melons in the swamp.",
 		"Outback: red sand, eucalyptus, kangaroos, emus, wombats. Koalas and platypuses are protected. Mind the crocodiles.",
