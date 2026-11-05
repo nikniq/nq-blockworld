@@ -862,9 +862,81 @@ type Skins struct {
 	mat   rl.Material
 	ready bool
 	parts map[[2]int]*meshBuf // (kind, part) -> unit box mesh
+	tmpl  map[[2]int]*boxTmpl // the same boxes kept on the CPU for the batch
+	batch skinBatch
 }
 
-var skins = &Skins{parts: map[[2]int]*meshBuf{}}
+// boxTmpl is the CPU copy of a part's unit box: 24 corners.
+type boxTmpl struct {
+	verts [72]float32
+	norms [72]float32
+	uvs   [48]float32
+	cols  [96]uint8
+}
+
+// skinBatch gathers every opaque creature part of a frame into one mesh.
+// Drawing each part as its own mesh cost a draw call and a dozen uniform
+// updates per box, several hundred times a frame; transforming 24 corners on
+// the CPU is far cheaper, and the whole lot then goes out in one call.
+type skinBatch struct {
+	buf   *meshBuf // its own heap object: cgo's pointer check scans all of whatever holds a mesh
+	verts []float32
+	norms []float32
+	uvs   []float32
+	cols  []uint8
+}
+
+// add appends one part: its corners moved by m, its light baked into the
+// vertex colour (the shader multiplies the two anyway).
+func (b *skinBatch) add(t *boxTmpl, m rl.Matrix, c rl.Color) {
+	if len(b.verts)/3+24 > maxQuadVerts {
+		return // thousands of creatures in view at once: never in practice
+	}
+	for i := 0; i < 72; i += 3 {
+		x, y, z := t.verts[i], t.verts[i+1], t.verts[i+2]
+		b.verts = append(b.verts,
+			m.M0*x+m.M4*y+m.M8*z+m.M12,
+			m.M1*x+m.M5*y+m.M9*z+m.M13,
+			m.M2*x+m.M6*y+m.M10*z+m.M14)
+	}
+	b.norms = append(b.norms, t.norms[:]...)
+	b.uvs = append(b.uvs, t.uvs[:]...)
+	cr, cg, cb := uint32(c.R), uint32(c.G), uint32(c.B)
+	for i := 0; i < 96; i += 4 {
+		b.cols = append(b.cols,
+			uint8((uint32(t.cols[i])*cr+127)/255),
+			uint8((uint32(t.cols[i+1])*cg+127)/255),
+			uint8((uint32(t.cols[i+2])*cb+127)/255),
+			t.cols[i+3])
+	}
+}
+
+// Flush draws the parts gathered so far. A fresh mesh is uploaded each time
+// rather than updating one in place: rewriting a buffer the GPU is still
+// reading from makes the driver wait.
+func (s *Skins) Flush() {
+	b := &s.batch
+	if b.buf == nil {
+		b.buf = &meshBuf{}
+	}
+	b.buf.free()
+	if len(b.verts) == 0 {
+		return
+	}
+	m := &b.buf.mesh
+	m.VertexCount = int32(len(b.verts) / 3)
+	m.TriangleCount = m.VertexCount / 2
+	m.Indices = &quadIndex[0]
+	m.Vertices, m.Normals, m.Texcoords, m.Colors = &b.verts[0], &b.norms[0], &b.uvs[0], &b.cols[0]
+	rl.UploadMesh(m, false)
+	b.buf.loaded = true
+	m.Vertices, m.Normals, m.Texcoords, m.Colors = nil, nil, nil, nil
+	b.verts, b.norms, b.uvs, b.cols = b.verts[:0], b.norms[:0], b.uvs[:0], b.cols[:0]
+	s.mat.GetMap(rl.MapDiffuse).Color = rl.White
+	rl.DrawMesh(*m, s.mat, rl.MatrixIdentity())
+}
+
+var skins = &Skins{parts: map[[2]int]*meshBuf{}, tmpl: map[[2]int]*boxTmpl{}}
 
 func (s *Skins) init(w *World) {
 	if s.ready {
@@ -896,6 +968,12 @@ func (s *Skins) box(kind SkinKind, part int) *meshBuf {
 		u0, v0, u1, v1 := skinUV(kind, part, faceIndexOf(f))
 		m.emitFaceUV(f, u0, v0, u1, v1, -0.5, -0.5, -0.5, unitBox, 1, [4]int{3, 3, 3, 3}, fullLight)
 	}
+	t := &boxTmpl{}
+	copy(t.verts[:], m.verts)
+	copy(t.norms[:], m.norms)
+	copy(t.uvs[:], m.uvs)
+	copy(t.cols[:], m.cols)
+	s.tmpl[key] = t
 	m.upload()
 	s.parts[key] = m
 	return m
@@ -932,9 +1010,15 @@ func (s *Skins) drawPart(kind SkinKind, part int, size, pivot rl.Vector3, origin
 	m = rl.MatrixMultiply(m, rl.MatrixRotateY(rotY))
 	m = rl.MatrixMultiply(m, rl.MatrixTranslate(pivot.X, pivot.Y, pivot.Z))
 	m = rl.MatrixMultiply(m, model)
+	box := s.box(kind, part)
+	if color.A == 255 {
+		s.batch.add(s.tmpl[[2]int{int(kind), part}], m, color)
+		return
+	}
+	// A fading creature blends, so it is drawn on the spot as before.
 	mm := s.mat.GetMap(rl.MapDiffuse)
 	mm.Color = color
-	rl.DrawMesh(s.box(kind, part).mesh, s.mat, m)
+	rl.DrawMesh(box.mesh, s.mat, m)
 }
 
 // modelMatrix builds the creature transform: scale, death tilt, facing, position.
@@ -1203,6 +1287,9 @@ func (s *Skins) Unload() {
 		m.free()
 	}
 	s.parts = map[[2]int]*meshBuf{}
+	if s.batch.buf != nil {
+		s.batch.buf.free()
+	}
 	rl.UnloadTexture(s.tex)
 	s.ready = false
 }

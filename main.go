@@ -28,6 +28,8 @@ var perfWorst float32 // longest frame in the measured window
 var perfSlow int      // frames over 20 ms (a visible hitch at 60 Hz)
 var perfBuilds int    // chunk builds in the measured window
 var perfPhase [4]time.Duration
+var drawBatch *rl.RenderBatch // see main: kept alive here because raylib holds its address
+
 var perfTrace = os.Getenv("BLOCKWORLD_TRACE") != "" // log every slow frame with its phase times
 
 func ms(d time.Duration) float32 { return float32(d.Microseconds()) / 1000 }
@@ -2120,6 +2122,9 @@ func (g *Game) draw3D() {
 			rl.DrawCube(rl.NewVector3(t.Pos.X, t.Pos.Y+0.5, t.Pos.Z), 1.02, 1.02, 1.02, rl.NewColor(255, 255, 255, 170))
 		}
 	}
+	if skins.ready {
+		skins.Flush() // every creature part gathered above, in one draw
+	}
 	perfMark("clouds")
 	if quality().Clouds {
 		g.Sky.DrawClouds(cam, float32(rl.GetTime()))
@@ -2176,7 +2181,9 @@ func (g *Game) draw3D() {
 	}
 	perfMark("water")
 	w.DrawTranslucent(cam)
+	perfMark("held")
 	g.drawHeldBlock(cam)
+	perfMark("end3d")
 	rl.EndMode3D()
 }
 
@@ -3958,6 +3965,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer rl.CloseWindow()
+	// raylib's own batch (sky, shapes, HUD) is flushed several times a frame
+	// into a single vertex buffer, and rewriting a buffer the GPU has not
+	// finished drawing from makes the driver wait. A ring of buffers gives each
+	// flush of a frame its own.
+	drawBatch = new(rl.RenderBatch)
+	*drawBatch = rl.LoadRenderBatch(6, 8192)
+	rl.SetRenderBatchActive(drawBatch)
+	defer func() {
+		rl.SetRenderBatchActive(nil)
+		rl.UnloadRenderBatch(*drawBatch)
+	}()
 	// Window icon for Linux and Windows title bars; macOS takes it from the app bundle instead.
 	if icon := rl.LoadImageFromMemory(".png", iconPNG, int32(len(iconPNG))); runtime.GOOS != "darwin" && icon != nil && icon.Width > 0 {
 		small := rl.ImageCopy(icon)
@@ -4049,8 +4067,8 @@ func main() {
 			}
 		}
 	}
-	if soak {
-		rl.SetTargetFPS(0)
+	if soak || bench {
+		rl.SetTargetFPS(0) // measure the frame, not the 144 FPS limiter
 	}
 	frame := 0
 

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -2812,15 +2814,19 @@ var renderStats struct {
 // (build=true) also flushes lighting and rebuilds dirty chunks within the
 // frame's time budget; the translucent pass that follows reuses its list, so
 // a backlog never costs two rounds of builds in one frame.
-func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(c *chunk, m rl.Matrix)) {
+func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(k *cand, m rl.Matrix)) {
 	if !build {
-		for _, k := range w.lastReady {
-			fn(k.c, rl.MatrixTranslate(k.ox, 0, k.oz))
+		// Water and glass blend, so they go farthest first.
+		for i := len(w.lastReady) - 1; i >= 0; i-- {
+			if k := &w.lastReady[i]; k.vis != 0 {
+				fn(k, rl.MatrixTranslate(k.ox, 0, k.oz))
+			}
 		}
 		return
 	}
 	w.flushLight()
 	fwd := rl.Vector3Normalize(rl.Vector3Subtract(cam.Target, cam.Position))
+	fr := newFrustum(cam)
 	ready, dirty := w.lastReady[:0], w.scratchDirty[:0]
 	for cj := 0; cj < w.ncz; cj++ {
 		for ci := 0; ci < w.ncx; ci++ {
@@ -2837,7 +2843,7 @@ func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(c *chunk, m r
 			if limit := w.envFogEnd + chunkSize; limit > 0 && d2 > limit*limit {
 				continue
 			}
-			k := cand{c, ci, cj, ox, oz, d2}
+			k := cand{c: c, ci: ci, cj: cj, ox: ox, oz: oz, d2: d2}
 			if c.dirty {
 				dirty = append(dirty, k)
 			} else {
@@ -2890,9 +2896,27 @@ func (w *World) visibleChunks(cam rl.Camera3D, build bool, fn func(c *chunk, m r
 	}
 	renderStats.Pending = max(0, len(dirty)-built)
 	renderStats.Chunks = len(ready)
+	// Chunks are built for the whole half of the world in front of the camera,
+	// so turning the head never waits on a build, but only the sections that
+	// reach into the view itself are drawn. Nearest first: what is close hides
+	// what is behind it, and the GPU skips shading the hidden pixels.
+	slices.SortFunc(ready, func(a, b cand) int { return cmp.Compare(a.d2, b.d2) })
+	for i := range ready {
+		k := &ready[i]
+		x0 := float32(k.ci*chunkSize+originX) + k.ox
+		z0 := float32(k.cj*chunkSize+originZ) + k.oz
+		k.vis = 0
+		for s := 0; s < chunkSections; s++ {
+			if fr.sees(x0, float32(s*sectionH), z0, x0+chunkSize, float32((s+1)*sectionH), z0+chunkSize) {
+				k.vis |= 1 << s
+			}
+		}
+	}
 	w.lastReady, w.scratchDirty = ready, dirty
-	for _, k := range ready {
-		fn(k.c, rl.MatrixTranslate(k.ox, 0, k.oz))
+	for i := range ready {
+		if k := &ready[i]; k.vis != 0 {
+			fn(k, rl.MatrixTranslate(k.ox, 0, k.oz))
+		}
 	}
 }
 
@@ -2902,6 +2926,58 @@ type cand struct {
 	ci, cj int
 	ox, oz float32
 	d2     float32
+	vis    uint8 // bit per vertical section that reaches into the view
+}
+
+// frustum is the camera's view as four planes through the eye (left, right,
+// bottom, top), each with its normal pointing into the view.
+type frustum struct {
+	eye rl.Vector3
+	n   [4]rl.Vector3
+}
+
+func newFrustum(cam rl.Camera3D) frustum {
+	fwd := rl.Vector3Normalize(rl.Vector3Subtract(cam.Target, cam.Position))
+	right := rl.Vector3Normalize(rl.Vector3CrossProduct(fwd, cam.Up))
+	up := rl.Vector3CrossProduct(right, fwd)
+	tv := float32(math.Tan(float64(cam.Fovy) * math.Pi / 360))
+	th := tv
+	if h := rl.GetRenderHeight(); h > 0 {
+		th = tv * float32(rl.GetRenderWidth()) / float32(h)
+	}
+	return frustum{eye: cam.Position, n: [4]rl.Vector3{
+		rl.Vector3Add(rl.Vector3Scale(fwd, th), right),
+		rl.Vector3Subtract(rl.Vector3Scale(fwd, th), right),
+		rl.Vector3Add(rl.Vector3Scale(fwd, tv), up),
+		rl.Vector3Subtract(rl.Vector3Scale(fwd, tv), up),
+	}}
+}
+
+// frustumPad widens the test by a few blocks: nudged block corners, camera
+// shake and the view bob must never cut a section that is on screen.
+const frustumPad = 3
+
+// sees reports whether any of the box can be inside the view: for each plane
+// it tests the corner of the box farthest along the plane's normal.
+func (f *frustum) sees(x0, y0, z0, x1, y1, z1 float32) bool {
+	x0, y0, z0 = x0-frustumPad-f.eye.X, y0-frustumPad-f.eye.Y, z0-frustumPad-f.eye.Z
+	x1, y1, z1 = x1+frustumPad-f.eye.X, y1+frustumPad-f.eye.Y, z1+frustumPad-f.eye.Z
+	for _, n := range f.n {
+		x, y, z := x0, y0, z0
+		if n.X > 0 {
+			x = x1
+		}
+		if n.Y > 0 {
+			y = y1
+		}
+		if n.Z > 0 {
+			z = z1
+		}
+		if n.X*x+n.Y*y+n.Z*z < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // sectionVisible decides whether a vertical section of a chunk at the given
@@ -2930,9 +3006,10 @@ func (w *World) Draw(cam rl.Camera3D) {
 			rl.TraceLog(rl.LogInfo, "LOAD initGPU %.0fms", ms(time.Since(t0)))
 		}
 	}
-	w.visibleChunks(cam, true, func(c *chunk, m rl.Matrix) {
+	w.visibleChunks(cam, true, func(kc *cand, m rl.Matrix) {
+		c := kc.c
 		for k := 0; k < chunkSections; k++ {
-			if c.opaque[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
+			if kc.vis&(1<<k) != 0 && c.opaque[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
 				renderStats.Verts += int(c.opaque[k].mesh.VertexCount)
 				rl.DrawMesh(c.opaque[k].mesh, w.mat, m)
 			}
@@ -2948,9 +3025,10 @@ func (w *World) DrawTranslucent(cam rl.Camera3D) {
 		rl.SetShaderValue(w.shader, w.locWater, []float32{1}, rl.ShaderUniformFloat)
 	}
 	rl.DisableBackfaceCulling()
-	w.visibleChunks(cam, false, func(c *chunk, m rl.Matrix) {
+	w.visibleChunks(cam, false, func(kc *cand, m rl.Matrix) {
+		c := kc.c
 		for k := 0; k < chunkSections; k++ {
-			if c.trans[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
+			if kc.vis&(1<<k) != 0 && c.trans[k].loaded && sectionVisible(k, m, cam, c.ci, c.cj) {
 				renderStats.Verts += int(c.trans[k].mesh.VertexCount)
 				rl.DrawMesh(c.trans[k].mesh, w.mat, m)
 			}

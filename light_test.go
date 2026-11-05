@@ -3,6 +3,8 @@ package main
 import (
 	"math/rand"
 	"testing"
+
+	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
 // A relight of any region of an already-lit world must change nothing: the
@@ -52,5 +54,27 @@ func TestEditRelightMatchesFullRelight(t *testing.T) {
 		if w.Light[k] != got[k] {
 			t.Fatalf("incremental relight differs from full relight at cell %d: %#x vs %#x", k, got[k], w.Light[k])
 		}
+	}
+}
+
+// The view test must keep everything in front of the camera and drop what is
+// behind it or far off to one side.
+func TestFrustum(t *testing.T) {
+	cam := rl.Camera3D{Position: rl.NewVector3(0, 50, 0), Target: rl.NewVector3(0, 50, 1), Up: rl.NewVector3(0, 1, 0), Fovy: 70}
+	f := newFrustum(cam)
+	if !f.sees(-8, 32, 40, 8, 64, 56) {
+		t.Error("a section straight ahead was culled")
+	}
+	if !f.sees(-8, 32, -8, 8, 64, 8) {
+		t.Error("the section the camera stands in was culled")
+	}
+	if f.sees(-8, 32, -80, 8, 64, -64) {
+		t.Error("a section behind the camera was kept")
+	}
+	if f.sees(200, 32, 16, 216, 64, 32) {
+		t.Error("a section far off to the side was kept")
+	}
+	if f.sees(-8, 300, 16, 8, 332, 32) {
+		t.Error("a section far overhead was kept")
 	}
 }
