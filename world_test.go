@@ -1700,8 +1700,10 @@ func TestCropsAndTrees(t *testing.T) {
 // World slots keep their own save files; the first slot is the old single save.
 func TestWorldSlots(t *testing.T) {
 	t.Setenv("BLOCKWORLD_SAVE", "")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("AppData", home) // where Windows keeps the config directory
 	old := settings.Slot
 	defer func() { settings.Slot = old }()
 	if filepath.Base(savePathFor(0)) != "world.sav" || filepath.Base(savePathFor(2)) != "world3.sav" {
