@@ -299,7 +299,7 @@ Other players are drawn as blocky figures with name tags.
 
 ## Requirements
 
-- Go 1.22 or newer
+- Go 1.25 or newer
 - A C compiler (raylib is compiled from source through cgo)
 - OpenGL 3.3 (the world shader falls back to unlit rendering without it)
 - Platform libraries listed below
@@ -336,7 +336,10 @@ go build -ldflags="-H windowsgui" -o blockworld.exe .
 .\blockworld.exe
 ```
 
-A `Makefile` with `run`, `build`, `build-macos`, `build-linux` and `build-windows` targets is included.
+From PowerShell, `.\build.ps1 -BuildOnly` does the same with the version stamped in.
+
+`make build` (or `./cx.sh --build-only`) is the same quick build on any platform; `make run`,
+`make test` and `make check` are there too.
 
 ### If it runs slowly
 
@@ -371,32 +374,40 @@ quality, which is useful when reporting a slow machine.
 
 ### Packaging as an app with an icon
 
-The quickest way is the packaging script, which checks the toolchain, generates the icon, runs the
-tests, builds, packages for the platform it runs on and writes checksums into `dist/`:
+One script does everything: it checks the toolchain, generates the icon, runs the tests, builds,
+packages and writes checksums into `dist/`.
 
 ```sh
-./cx.sh                  # dist/Blockworld.app + zip on macOS, tar.gz with installer on Linux, zip on Windows
-./cx.sh --version 1.2    # stamp a version into the package names and the menu
-./cx.sh --run            # launch the packaged game afterwards
-./cx.sh --deps --install # Linux one-shot: install the distro packages, build, package and add to the app menu
+./cx.sh                   # package for this machine
+./cx.sh --build-only      # just compile ./blockworld, no tests and no package
+./cx.sh --version 1.2     # stamp a version (default: the latest git tag, or 1.0)
+./cx.sh --universal --dmg # macOS: one app for Apple silicon and Intel, plus a disk image
+./cx.sh --target windows  # macOS or Linux: cross-compile the Windows package with mingw-w64
+./cx.sh --deps --install  # one-shot: install the build dependencies, package, and install the game
+./cx.sh --run             # launch the packaged game afterwards
+./cx.sh --help            # every option
 ```
 
-On Windows run it from a Git Bash or MSYS2 shell. The pieces it uses are also available as make targets:
+| Platform | Run | Result in `dist/` |
+|---|---|---|
+| macOS | `./cx.sh` | `Blockworld.app` and a zip of it; `--dmg` adds a disk image, `--universal` covers Intel Macs too |
+| Linux | `./cx.sh` | a `tar.gz` holding the binary, icon, desktop launcher, `install.sh` and `uninstall.sh` |
+| Windows | `.\build.ps1` in PowerShell, `build.bat`, or `./cx.sh` in Git Bash or MSYS2 | a zip holding `blockworld.exe` with the icon embedded |
+
+`--deps` knows apt, dnf, pacman, zypper and apk on Linux, and Homebrew on macOS. The `Makefile`
+wraps the same script: `make package`, `make universal`, `make windows`, `make install`, `make clean`.
 
 The icon is generated from code (`go run ./cmd/mkicon` writes `icon.png`) and embedded in the binary,
-so the window shows it on Linux and Windows. To make a proper application:
+so the window shows it on Linux and Windows.
 
-| Platform | Command | Result |
-|---|---|---|
-| macOS | `make app-macos` | `dist/Blockworld.app` with an `.icns` icon; drag it to Applications |
-| Linux | `make app-linux` | installs to `~/.local/bin` with a desktop launcher and icon in your app menu |
-| Windows | `make app-windows` | `blockworld.exe` with the icon embedded (needs `go install github.com/tc-hib/go-winres@latest`) |
+GitHub Actions runs the same script on Linux, macOS and Windows for every push and keeps the
+packages as build artifacts. Pushing a tag such as `v1.2` also publishes them as a release.
 
 The macOS bundle is unsigned, so the first launch needs right click, Open (or
 `xattr -dr com.apple.quarantine dist/Blockworld.app`). Signing and notarising with a Developer ID
 is the extra step for distributing outside your own machines.
-Because raylib is built through cgo, each binary must be compiled on its own platform
-(or with a matching cross toolchain such as `x86_64-w64-mingw32-gcc` and `CGO_ENABLED=1 GOOS=windows CC=x86_64-w64-mingw32-gcc`).
+Because raylib is built through cgo, each package is compiled on its own platform. The exception is
+Windows, which `./cx.sh --target windows` cross-compiles with `x86_64-w64-mingw32-gcc`.
 
 `go test ./...` covers generation, collision, pathfinding, meshing, tools and crafting without a window.
 Setting `BLOCKWORLD_SHOTS=1` runs a short scripted session that writes sky, day, night, crafting and cave screenshots
