@@ -61,6 +61,10 @@ func (g *Game) showcaseStep(frame int, dir string) bool {
 	case 290:
 		saveShot(filepath.Join(dir, "showcase_home.png"))
 		x, y, z := g.showcaseOrigin()
+		look(rl.NewVector3(float32(x)-2, float32(y)+2.3, float32(z)+3.4), 0, -0.3)
+	case 305:
+		saveShot(filepath.Join(dir, "showcase_living.png"))
+		x, y, z := g.showcaseOrigin()
 		look(rl.NewVector3(float32(x)+11, float32(y)+6, float32(z)+1), 0, -0.05)
 	case 320:
 		saveShot(filepath.Join(dir, "showcase_trees.png"))
@@ -218,6 +222,24 @@ func (g *Game) buildShowcase() {
 		set(-5+i, 0, 1, f)
 	}
 	set(-3, 0, 4, Chair) // on its own: back to nothing in particular
+	// A living room: a wall with a fireplace, bookshelves, a painting and a clock,
+	// a two-seat sofa on a rug facing the fire, and a lamp beside it.
+	for dx := -4; dx <= 0; dx++ {
+		for dy := 0; dy <= 2; dy++ {
+			set(dx, dy, 8, Planks)
+		}
+	}
+	set(-2, 0, 8, Fireplace)
+	set(-4, 0, 7, Bookshelf)
+	set(-4, 1, 7, Bookshelf)
+	set(-3, 1, 7, Painting)
+	set(-1, 1, 7, Clock)
+	for i, r := range []Block{RugRed, Rug, RugBlue} {
+		set(-3+i, 0, 6, r)
+	}
+	set(-3, 0, 5, Sofa)
+	set(-2, 0, 5, Sofa)
+	set(-1, 0, 5, Lamp)
 	// One of every tree.
 	tree := func(dx, dz int, place func(x, y, z int, set func(x, y, z int, b Block))) {
 		place(sx+dx-originX, y, sz+dz-originZ, func(lx, yy, lz int, b Block) { w.Set(lx+originX, yy, lz+originZ, b) })

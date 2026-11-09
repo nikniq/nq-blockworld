@@ -154,6 +154,15 @@ const (
 	FlowerBlue
 	FlowerWhite
 	FlowerPink
+	Bookshelf
+	Lamp
+	Rug
+	RugRed
+	RugBlue
+	Sofa
+	Fireplace
+	Painting
+	Clock
 	numBlocks
 )
 
@@ -200,6 +209,8 @@ var (
 	fencePostBox  = [2][3]float32{{0.375, 0, 0.375}, {0.625, 1.5, 0.625}}
 	trapdoorBox   = [2][3]float32{{0, 0, 0}, {1, trapdoorH, 1}}
 	furnitureBox  = [2][3]float32{{0.1, 0, 0.1}, {0.9, 0.8, 0.9}} // held and dropped furniture
+	rugBox        = [2][3]float32{{0, 0, 0}, {1, rugTop, 1}}
+	panelBox      = [2][3]float32{{0, 0, 0.47}, {1, 1, 0.53}} // held paintings and clocks
 )
 
 const trapdoorH = 0.1875 // a closed trapdoor is a thin slab at the bottom of its cell
@@ -599,6 +610,24 @@ var blocks = [numBlocks]blockInfo{
 		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerWhite, Tiny: true, Box: &plantBox, Cross: true},
 	FlowerPink: {Name: "Tulip", Top: col(240, 120, 170), Side: col(240, 120, 170), Bottom: col(240, 120, 170),
 		Pat: [3]texPattern{PatFlower, PatFlower, PatFlower}, MineTime: 0.05, Drops: FlowerPink, Tiny: true, Box: &plantBox, Cross: true},
+	Bookshelf: {Name: "Bookshelf", Top: col(186, 148, 88), Side: col(160, 120, 70), Bottom: col(172, 134, 76),
+		Pat: [3]texPattern{PatPlanks, PatBookshelf, PatPlanks}, MineTime: 1.2, Drops: Bookshelf, Solid: true},
+	Lamp: {Name: "Lamp", Top: col(250, 232, 170), Side: col(250, 232, 170), Bottom: col(250, 232, 170),
+		Pat: [3]texPattern{PatLamp, PatLamp, PatLamp}, MineTime: 0.2, Drops: Lamp, Tiny: true, Box: &furnitureBox, Emit: 14},
+	Rug: {Name: "Rug", Top: col(222, 208, 176), Side: col(222, 208, 176), Bottom: col(222, 208, 176),
+		Pat: [3]texPattern{PatRug, PatRug, PatRug}, MineTime: 0.1, Drops: Rug, Tiny: true, Box: &rugBox},
+	RugRed: {Name: "Red Rug", Top: col(176, 44, 44), Side: col(176, 44, 44), Bottom: col(176, 44, 44),
+		Pat: [3]texPattern{PatRug, PatRug, PatRug}, MineTime: 0.1, Drops: RugRed, Tiny: true, Box: &rugBox},
+	RugBlue: {Name: "Blue Rug", Top: col(56, 88, 176), Side: col(56, 88, 176), Bottom: col(56, 88, 176),
+		Pat: [3]texPattern{PatRug, PatRug, PatRug}, MineTime: 0.1, Drops: RugBlue, Tiny: true, Box: &rugBox},
+	Sofa: {Name: "Sofa", Top: col(176, 44, 44), Side: col(176, 44, 44), Bottom: col(176, 44, 44),
+		Pat: [3]texPattern{PatSofa, PatSofa, PatSofa}, MineTime: 0.5, Drops: Sofa, Solid: true, Tiny: true, Box: &furnitureBox},
+	Fireplace: {Name: "Fireplace", Top: col(118, 118, 120), Side: col(126, 120, 116), Bottom: col(110, 110, 112),
+		Pat: [3]texPattern{PatCobble, PatFireplace, PatCobble}, MineTime: 2.5, Hard: true, Drops: Fireplace, Solid: true, Emit: 15},
+	Painting: {Name: "Painting", Top: col(120, 82, 44), Side: col(120, 82, 44), Bottom: col(120, 82, 44),
+		Pat: [3]texPattern{PatPainting, PatPainting, PatPainting}, MineTime: 0.1, Drops: Painting, Tiny: true, Box: &panelBox},
+	Clock: {Name: "Wall Clock", Top: col(120, 82, 44), Side: col(120, 82, 44), Bottom: col(120, 82, 44),
+		Pat: [3]texPattern{PatClock, PatClock, PatClock}, MineTime: 0.1, Drops: Clock, Tiny: true, Box: &panelBox},
 }
 
 // Opaque reports whether a block hides the faces of its neighbours.
@@ -2423,6 +2452,8 @@ func (w *World) meshChunk(ci, cj int, c *chunk) {
 						box = w.doorBox(lx, y, lz, b)
 					case b == TrapdoorOpen:
 						box = w.openTrapdoorBox(lx, y, lz)
+					case b == Painting || b == Clock:
+						box = w.wallPanel(lx, y, lz)
 					}
 					if info.Cross {
 						c.opaque[y/sectionH].emitCross(b, wx, float32(y), wz, box[1][1], l, biomeTintCode(b, &faces[0], w.Biome[lz*worldW+lx]))
@@ -2447,6 +2478,12 @@ func (w *World) meshChunk(ci, cj int, c *chunk) {
 							tb = tex[bi]
 						}
 						for fi := range faces {
+							if b == Painting || b == Clock {
+								// Only the two flat sides: the thin edges would squeeze the whole picture into a sliver.
+								if thin := box[1][0]-box[0][0] < 0.5; (thin && faces[fi].n[0] == 0) || (!thin && faces[fi].n[2] == 0) {
+									continue
+								}
+							}
 							c.opaque[y/sectionH].emitFace(&faces[fi], tb, wx, float32(y), wz, box, 1, [4]int{3, 3, 3, 3}, [4]cornerLight{l, l, l, l})
 							if code := biomeTintCode(b, &faces[fi], w.Biome[lz*worldW+lx]); code != 255 {
 								c.opaque[y/sectionH].setLastFaceAlpha(code)
@@ -3090,6 +3127,8 @@ func (w *World) cellTop(x, y, z int) float32 {
 		return chairTop
 	case b == BunkBed || b == BunkTop:
 		return bunkTop
+	case b == Sofa:
+		return chairTop
 	case blocks[b].Solid:
 		return 1
 	case y > 0 && w.Get(x, y-1, z) == Fence:

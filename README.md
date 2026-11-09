@@ -146,8 +146,15 @@ block textures and sound effects are generated at startup.
   up the open side, sleeps and sets your spawn like a bed, and is two blocks tall. A **flower vase**
   (two flowers and red sand, or sand) puts a bunch of flowers on a table or a windowsill. There are
   five wild flowers to pick: poppy, dandelion, cornflower, daisy and tulip. You stand on tables and
-  chairs at their real height. Village houses come furnished with a table, a chair and a vase, and
-  some have bunks.
+  chairs at their real height. Village houses come furnished with a table, a chair, a vase and a rug,
+  and some have bunks.
+- **Living room**: a **sofa** (two planks, two wool and a poppy) backs onto a wall, and sofas side
+  by side join into one long couch with an arm at each end; right click to sit. A **fireplace** (six
+  cobblestone and coal) and a **lamp** (a torch, wool and a plank) light a room, the lamp standing
+  on the floor or on a table. A **bookshelf** is six planks. **Rugs** (two wool make three; add a
+  poppy for red or a cornflower for blue) lie flat on the floor and are walked straight over. A
+  **painting** (two planks and wool) and a **wall clock** (two planks and gold ore) hang flat on
+  whichever wall they touch; right click the clock to read the time.
 - **Trapdoors**: three planks make two. A trapdoor is a thin hatch you place in a floor or a wall and
   stand on at its real height; right click and it stands up against the nearest wall, opening the way
   down a ladder or a drop into the mine. Closed, it keeps mobs from falling in after you.

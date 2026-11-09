@@ -158,6 +158,8 @@ func (w *World) buildHouse(x, z, base, fx, fz int) {
 	w.setLocal(tx, base, tz, Table)
 	w.setLocal(tx, base+1, tz, Vase)
 	w.setLocal(tx+fx, base, tz+fz, Chair)
+	// A rug in the middle of the floor; the colour goes by where the house stands.
+	w.setLocal(x, base, z, [3]Block{Rug, RugRed, RugBlue}[(x+z)%3])
 	w.setLocal(x+fz*(hw-1), base+1, z+fx*(hd-1), Torch)
 	if rand.Intn(2) == 0 {
 		w.setLocal(x-fz*(hw-1), base, z-fx*(hd-1), Crate)

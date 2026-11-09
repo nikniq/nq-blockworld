@@ -181,7 +181,7 @@ func (g *Game) quakeProtected(x, z int) bool {
 func naturalBlock(b Block) bool {
 	switch b {
 	case Planks, StoneBrick, Glass, Torch, TNT, Wool, Bed, Ladder, DoorClosed, DoorOpen, DoorTop, DoorTopOpen,
-		TrapdoorClosed, TrapdoorOpen, Fence, BunkBed, BunkTop, Table, Chair, Vase, Beacon, BeaconLit, FlagPost, ChestBlock, Spawner, Crate, Bedrock, Cobble, GoldBlock,
+		TrapdoorClosed, TrapdoorOpen, Fence, BunkBed, BunkTop, Table, Chair, Vase, Bookshelf, Lamp, Rug, RugRed, RugBlue, Sofa, Fireplace, Painting, Clock, Beacon, BeaconLit, FlagPost, ChestBlock, Spawner, Crate, Bedrock, Cobble, GoldBlock,
 		WheatGrowing, Wheat, CarrotGrowing, CarrotRipe, BeetrootGrowing, BeetrootRipe, PumpkinStem, MelonStem:
 		return false
 	}

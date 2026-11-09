@@ -967,8 +967,12 @@ func (g *Game) updateBuilder(dt float32) {
 			return
 		}
 	}
-	if usePressed() && w.Get(a.X, a.Y, a.Z) == Chair {
+	if b := w.Get(a.X, a.Y, a.Z); usePressed() && (b == Chair || b == Sofa) {
 		g.sit(a.X, a.Y, a.Z)
+		return
+	}
+	if usePressed() && w.Get(a.X, a.Y, a.Z) == Clock {
+		g.say("The clock says "+g.clock(), 2)
 		return
 	}
 	if usePressed() && isBed(w.Get(a.X, a.Y, a.Z)) {

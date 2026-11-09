@@ -90,6 +90,13 @@ const (
 	PatChair
 	PatBunk
 	PatVase
+	PatBookshelf
+	PatLamp
+	PatRug
+	PatSofa
+	PatFireplace
+	PatPainting
+	PatClock
 )
 
 const (
@@ -630,7 +637,7 @@ func texelShape(p texPattern, base rl.Color, info *blockInfo, px, py, seed int) 
 		return mul(base, 0.8+0.3*n)
 	case PatFence, PatBucket, PatWaterBucket, PatDoorHigh, PatTrapdoor, PatPalmSide, PatCoconut, PatCarrot, PatCarrotCrop,
 		PatBeet, PatBeetCrop, PatStem, PatPumpkin, PatPumpkinTop, PatMelon, PatMelonTop, PatMelonSlice, PatPie,
-		PatTable, PatChair, PatBunk, PatVase:
+		PatTable, PatChair, PatBunk, PatVase, PatBookshelf, PatLamp, PatRug, PatSofa, PatFireplace, PatPainting, PatClock:
 		return texelPixel(p, base, info, x, y, seed)
 	default:
 		return paint(base, fx, fy, seed, 0.3, false)
@@ -1116,6 +1123,117 @@ func texelPixel(p texPattern, base rl.Color, info *blockInfo, x, y, seed int) rl
 			}
 		}
 		return rl.NewColor(0, 0, 0, 0)
+	case PatBookshelf:
+		// Three shelves of book spines between boards.
+		if y == 0 || y == 5 || y == 10 || y == 15 || x == 0 || x == 15 {
+			return mul(base, 0.85+0.2*n)
+		}
+		row := y / 5
+		h := hash2(x, row, seed+3)
+		if h < 0.1 {
+			return mul(base, 0.35) // a gap, the back of the case in shadow
+		}
+		if y%5 == 1 && hash2(x, row, seed+4) < 0.4 {
+			return mul(base, 0.35) // a shorter book
+		}
+		spines := [6]rl.Color{col(150, 40, 40), col(40, 80, 150), col(50, 120, 60), col(190, 160, 70), col(110, 60, 130), col(200, 190, 170)}
+		c := spines[int(h*60)%6]
+		if y%5 == 3 {
+			return mul(c, 1.25) // a band across the spine
+		}
+		return mul(c, 0.9+0.2*n)
+	case PatLamp:
+		// Icon: a shade on a stem.
+		if y >= 2 && y <= 7 && x >= 5-(y-2)/2 && x <= 10+(y-2)/2 {
+			return mul(base, 0.9+0.15*n)
+		}
+		if y > 7 && y < 14 && (x == 7 || x == 8) {
+			return rl.NewColor(110, 80, 45, 255)
+		}
+		if y >= 14 && x >= 5 && x <= 10 {
+			return rl.NewColor(95, 68, 38, 255)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatRug:
+		// Woven: a dark edge, a pale line inside it and a diamond in the middle.
+		edge := min(min(x, 15-x), min(y, 15-y))
+		d := abs(2*x-15) + abs(2*y-15)
+		switch {
+		case edge == 0:
+			return mul(base, 0.6+0.1*n)
+		case edge == 2:
+			return mul(base, 1.3)
+		case d <= 4 || (d >= 9 && d <= 11):
+			return mul(base, 1.3)
+		}
+		return mul(base, 0.88+0.2*n)
+	case PatSofa:
+		// Icon: back, arms, seat and feet.
+		if y >= 3 && y <= 8 && x >= 3 && x <= 12 {
+			return mul(base, 0.85+0.15*n)
+		}
+		if y >= 6 && y <= 11 && (x <= 2 && x >= 1 || x >= 13 && x <= 14) {
+			return mul(base, 0.7+0.1*n)
+		}
+		if y >= 9 && y <= 11 && x >= 3 && x <= 12 {
+			return mul(base, 1.05+0.15*n)
+		}
+		if y >= 12 && y <= 13 && (x == 2 || x == 13) {
+			return rl.NewColor(95, 68, 38, 255)
+		}
+		return rl.NewColor(0, 0, 0, 0)
+	case PatFireplace:
+		// A stone surround with a mantel, and a fire burning in the opening.
+		if x >= 3 && x <= 12 && y >= 6 {
+			h := 3 + int(hash2(x, 0, seed+5)*5)
+			switch {
+			case y >= 14:
+				return mul(rl.NewColor(70, 45, 25, 255), 0.8+0.4*n) // logs
+			case y >= 15-h+2:
+				return mul(rl.NewColor(255, 215, 80, 255), 0.9+0.1*n)
+			case y >= 15-h-1:
+				return mul(rl.NewColor(240, 120, 30, 255), 0.85+0.2*n)
+			}
+			return rl.NewColor(22, 18, 18, 255)
+		}
+		if y == 3 || y == 4 {
+			return mul(base, 0.6+0.1*n) // mantel
+		}
+		if y%4 == 1 || (x+(y/4)*3)%6 == 0 {
+			return mul(base, 0.7) // mortar
+		}
+		return mul(base, 0.92+0.2*n)
+	case PatPainting:
+		// A framed landscape: sky, a sun, hills and a little water.
+		if x <= 1 || x >= 14 || y <= 1 || y >= 14 {
+			return mul(base, 0.85+0.3*n)
+		}
+		hill := 9 - (abs(x-5)-3)/2
+		switch {
+		case (x-11)*(x-11)+(y-4)*(y-4) <= 2:
+			return rl.NewColor(250, 220, 90, 255)
+		case y >= 12:
+			return mul(rl.NewColor(70, 120, 200, 255), 0.9+0.2*n)
+		case y >= hill:
+			return mul(rl.NewColor(80, 150, 70, 255), 0.85+0.3*n)
+		}
+		return mul(rl.NewColor(150, 200, 240, 255), 0.95+0.08*n)
+	case PatClock:
+		// A round face in a wooden case, hands at three o'clock.
+		d := (2*x-15)*(2*x-15) + (2*y-15)*(2*y-15)
+		switch {
+		case d > 190:
+			return rl.NewColor(0, 0, 0, 0)
+		case d > 120:
+			return mul(base, 0.85+0.3*n)
+		case x == 8 && y >= 4 && y <= 8:
+			return rl.NewColor(30, 30, 34, 255) // minute hand
+		case y == 8 && x >= 8 && x <= 10:
+			return rl.NewColor(30, 30, 34, 255) // hour hand
+		case (x == 7 || x == 8) && (y == 3 || y == 12), (y == 7 || y == 8) && (x == 3 || x == 12):
+			return rl.NewColor(120, 60, 40, 255) // marks at twelve, three, six and nine
+		}
+		return rl.NewColor(240, 234, 214, 255)
 	case PatVase:
 		// A bunch of flowers on their stems; the pot is drawn below them.
 		for i, c := range [][3]int{{4, 3, 0}, {8, 2, 1}, {12, 4, 2}, {6, 6, 3}, {10, 7, 4}} {

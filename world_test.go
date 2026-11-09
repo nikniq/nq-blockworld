@@ -1783,4 +1783,45 @@ func TestFurniture(t *testing.T) {
 	if BunkTop.Placeable() || !Table.Placeable() {
 		t.Fatal("only the lower halves are placed by hand")
 	}
+	// The living room: a sofa backs onto a wall and joins its neighbour, a
+	// painting hangs flat on the wall, lamps and fireplaces give light, and
+	// rugs do not get in the way.
+	sx, sz := x-1, z+2
+	w.Set(sx, y, sz+1, Planks)
+	w.Set(sx+1, y, sz+1, Planks)
+	w.Set(sx, y, sz, Sofa)
+	w.Set(sx+1, y, sz, Sofa)
+	if dx, dz := w.sofaBack(sx-originX, y, sz-originZ); dx != 0 || dz != 1 {
+		t.Fatalf("a sofa's back should be against the wall: %d,%d", dx, dz)
+	}
+	one, _ := w.furnitureBoxes(sx-originX, y, sz-originZ, Sofa)
+	w.Set(sx+1, y, sz, Air)
+	alone, _ := w.furnitureBoxes(sx-originX, y, sz-originZ, Sofa)
+	if len(alone) <= len(one) {
+		t.Fatalf("a sofa on its own has an arm at both ends: %d boxes joined, %d alone", len(one), len(alone))
+	}
+	g.sit(sx, y, sz)
+	if !g.Player.Sitting {
+		t.Fatal("a sofa can be sat on")
+	}
+	w.Set(sx-1, y, sz, Painting)
+	w.Set(sx-1, y, sz+1, Planks)
+	if box := w.wallPanel(sx-1-originX, y, sz-originZ); box[0][2] < 0.9 {
+		t.Fatalf("a painting hangs flat against the wall behind it: %v", box)
+	}
+	if w.Solid(sx-1, y, sz) || Rug.Opaque() || blocks[Rug].Solid {
+		t.Fatal("paintings and rugs do not block movement")
+	}
+	if blocks[Lamp].Emit < 12 || blocks[Fireplace].Emit < 12 || !Fireplace.Opaque() || !Bookshelf.Opaque() {
+		t.Fatal("lamps and fireplaces light a room; fireplaces and bookshelves are whole blocks")
+	}
+	for _, b := range []Block{Bookshelf, Lamp, Rug, RugRed, RugBlue, Sofa, Fireplace, Painting, Clock} {
+		made := false
+		for _, r := range recipes {
+			made = made || r.Out == b
+		}
+		if !made || !b.Placeable() || naturalBlock(b) {
+			t.Fatalf("%s should be craftable, placeable and count as built", blocks[b].Name)
+		}
+	}
 }
