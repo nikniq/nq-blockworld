@@ -65,7 +65,7 @@ block textures and sound effects are generated at startup.
 - **Mining and building**: hold left click to break a block, right click to place the held block.
   Broken blocks drop as items you walk over. Sand and gravel fall when unsupported.
   Stone needs a pickaxe tier; iron ore needs stone, gold and diamond ore need iron.
-- **Crafting (E)**: logs to planks, torches, TNT, ladders, beds, cobblestone to stone bricks, sand to glass, ore to rifle ammo,
+- **Crafting (E)**: four tabs (Building, Furniture, Food, Tools & Arms; click or Tab/arrow keys, mouse wheel scrolls a long tab): logs to planks, torches, TNT, ladders, beds, cobblestone to stone bricks, sand to glass, ore to rifle ammo,
   and stone/iron/diamond swords and pickaxes. Better pickaxes mine faster; better swords hit harder.
 - **Creature detail**: the animals are more than boxes. Cows have horns, ears, a muzzle, an udder and
   a tufted tail; sheep a woolly crown; pigs floppy ears and a curly tail; wolves and cats pointed ears,

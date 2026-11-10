@@ -174,18 +174,20 @@ type Game struct {
 	Tracers        []Tracer
 	Sparks         []Spark
 
-	Night      int // nights that have fallen so far
-	WasNight   bool
-	SpawnLeft  int // hostiles still to arrive tonight
-	SpawnCD    float32
-	Score      int
-	Kills      int
-	HitMark    float32
-	Msg        string
-	MsgT       float32
-	Flash      float32 // muzzle flash timer
-	Shake      float32 // camera shake from explosions
-	CraftHover int
+	Night       int // nights that have fallen so far
+	WasNight    bool
+	SpawnLeft   int // hostiles still to arrive tonight
+	SpawnCD     float32
+	Score       int
+	Kills       int
+	HitMark     float32
+	Msg         string
+	MsgT        float32
+	Flash       float32 // muzzle flash timer
+	Shake       float32 // camera shake from explosions
+	CraftHover  int
+	CraftTab    Category // tab open on the crafting screen
+	CraftScroll int      // first visible row of that tab
 
 	HighScore int
 	NewHigh   bool

@@ -1825,3 +1825,34 @@ func TestFurniture(t *testing.T) {
 		}
 	}
 }
+
+// Every recipe sits on exactly one tab, the furniture is all on the furniture
+// tab, and a tab's list scrolls rather than running off a small screen.
+func TestCraftTabs(t *testing.T) {
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	seen := 0
+	for g.CraftTab = 0; g.CraftTab < numCats; g.CraftTab++ {
+		rows := g.craftRows()
+		seen += len(rows)
+		fit := craftFit(len(rows), 720)
+		if fit < 1 || fit*craftRowH+craftListY+40 > 720 {
+			t.Fatalf("tab %s: %d rows shown on a 720px screen", catNames[g.CraftTab], fit)
+		}
+		if s := clampScroll(99, len(rows), fit); s != len(rows)-fit {
+			t.Fatalf("tab %s: scroll clamped to %d, want %d", catNames[g.CraftTab], s, len(rows)-fit)
+		}
+	}
+	if seen != len(recipes) {
+		t.Fatalf("tabs show %d of %d recipes", seen, len(recipes))
+	}
+	g.CraftTab = CatFurniture
+	furn := map[Block]bool{}
+	for _, i := range g.craftRows() {
+		furn[recipes[i].Out] = true
+	}
+	for _, b := range []Block{Bed, BunkBed, Table, Chair, Vase, Bookshelf, Lamp, Rug, RugRed, RugBlue, Sofa, Fireplace, Painting, Clock} {
+		if !furn[b] {
+			t.Fatalf("%s is not on the furniture tab", blocks[b].Name)
+		}
+	}
+}
