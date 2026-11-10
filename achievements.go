@@ -41,6 +41,7 @@ const (
 	AchConquer
 	AchDragon
 	AchQuake
+	AchPet
 	numAch
 )
 
@@ -72,6 +73,7 @@ var achievements = [numAch]achievement{
 	AchMeteor:      {"Sky Fall", "Witness an asteroid strike"},
 	AchCat:         {"Crazy Cat Person", "Tame a cat with a fish"},
 	AchHorse:       {"Saddle Up", "Tame and ride a horse"},
+	AchPet:         {"Pied Piper", "Feed an animal until it follows you"},
 	AchFlag:        {"Standard Bearer", "Capture a flag"},
 	AchFound:       {"Founder", "Plant your own village flag"},
 	AchConquer:     {"Sovereign", "Hold every flag on the map"},

@@ -110,6 +110,11 @@ block textures and sound effects are generated at startup.
 - **Cats**: ginger, black and tabby strays live around villages and in forests and shy away from you
   unless you hold a fish. Give one a fish and it is your pet: it follows you, teleports to keep up, and
   creepers will not go near it. Right click it to make it sit and wait, or follow again; a fish heals it.
+- **Pets**: any pig, cow, sheep, kangaroo, emu, koala, wombat, platypus or compy becomes a pet after two
+  helpings of a food it likes (right click it while holding the food; it tells you what it wants, for
+  example carrots for pigs, wheat for cows and sheep, eucalyptus leaves for koalas, fish for platypuses).
+  A pet wears a green collar, follows you and teleports to keep up; right click it to make it wait or
+  follow again, and feed it to heal it.
 - **Fishing**: craft a rod from planks and wool, click at water to cast, and click again when the
   float dips. Mostly fish (food), sometimes seeds or an old boot.
 - **War of the flags**: two of the villages are rivals, Redfort and Bluehaven, each with a flag in its

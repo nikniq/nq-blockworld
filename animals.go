@@ -404,6 +404,9 @@ func (a *Animal) Draw(w *World) {
 			rl.DrawCubeV(c, rl.NewVector3(0.34*scale, 0.08, 0.34*scale), mul(rl.NewColor(60, 120, 220, 255), a.Lum))
 		}
 	}
+	if a.Alive && a.isPet() {
+		drawCollar(a, rl.NewColor(60, 170, 80, 255))
+	}
 	if a.Kind == AnimalWolf && a.Tamed && a.Alive {
 		// Red collar.
 		fwd := a.Heading
@@ -685,26 +688,7 @@ func (g *Game) catTick(a *Animal, dt float32) {
 			}
 		}
 	}
-	if a.Sitting {
-		a.Walking = false
-		a.WanderT = 1
-		return
-	}
-	p := g.Player
-	d := WrapDelta(p.Pos, a.Pos)
-	d.Y = 0
-	dist := rl.Vector3Length(d)
-	switch {
-	case dist > 24:
-		a.Pos = rl.Vector3Add(p.Pos, rl.NewVector3(-1.2, 0.2, 1.2))
-	case dist > 3.5:
-		a.Heading = rl.Vector3Scale(d, 1/dist)
-		a.Walking = true
-		a.WanderT = 0.3
-	case dist < 2:
-		a.Walking = false
-		a.WanderT = 0.6
-	}
+	g.followOwner(a)
 }
 
 // tameCat: a fish wins a stray over; right click again to make it sit or follow.
@@ -875,6 +859,9 @@ func (g *Game) updateAnimals(dt float32) {
 		if a.Alive && a.Kind == AnimalCat {
 			g.catTick(a, dt)
 		}
+		if a.Alive && a.isPet() {
+			g.followOwner(a)
+		}
 		if a.Alive && a.Kind >= AnimalKangaroo && a.Kind <= AnimalCrocodile {
 			g.wildlifeTick(a, dt)
 		}
@@ -1016,6 +1003,10 @@ func (g *Game) killAnimal(a *Animal) {
 		g.Score -= 50
 		if a.Tamed {
 			g.say("Your cat has died", 2.5)
+		}
+	default:
+		if a.isPet() {
+			g.say("Your "+a.Spec.Name+" has died", 2.5)
 		}
 	case AnimalBoat:
 		g.spawnDrop(c, Boat, 0)

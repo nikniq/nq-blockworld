@@ -1708,7 +1708,8 @@ func (g *Game) update(dt float32) {
 	if usePressed() && g.State == StatePlaying && !p.Mounted {
 		ray := rl.NewRay(p.Eye(), p.Forward())
 		for _, an := range g.Animals {
-			if !an.Alive || (an.Kind != AnimalTrader && an.Kind != AnimalVillager && an.Kind != AnimalWolf && an.Kind != AnimalCat && an.Kind != AnimalHorse && an.Kind != AnimalBoat) {
+			_, pet := petFoods[an.Kind]
+			if !an.Alive || (!pet && an.Kind != AnimalTrader && an.Kind != AnimalVillager && an.Kind != AnimalWolf && an.Kind != AnimalCat && an.Kind != AnimalHorse && an.Kind != AnimalBoat) {
 				continue
 			}
 			bb := an.BB()
@@ -1716,6 +1717,10 @@ func (g *Game) update(dt float32) {
 			d := rl.Vector3Subtract(n, an.Pos)
 			bb = rl.NewBoundingBox(rl.Vector3Add(bb.Min, d), rl.Vector3Add(bb.Max, d))
 			if c := rl.GetRayCollisionBox(ray, bb); c.Hit && c.Distance < 4 {
+				if pet {
+					g.tamePet(an)
+					return
+				}
 				if an.Kind == AnimalWolf {
 					g.tameWolf(an)
 					return

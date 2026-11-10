@@ -118,8 +118,8 @@ func (g *Game) wildlifeTick(a *Animal, dt float32) {
 			}
 		}
 	case AnimalKoala:
-		// Mostly sits; a tamed-wolf style follow is not needed.
-		if a.Walking && rand.Float32() < 0.02 {
+		// Mostly sits, unless it is following its owner.
+		if a.Walking && !a.Tamed && rand.Float32() < 0.02 {
 			a.Walking = false
 			a.WanderT = 3 + rand.Float32()*4
 		}

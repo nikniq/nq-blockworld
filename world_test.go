@@ -1856,3 +1856,63 @@ func TestCraftTabs(t *testing.T) {
 		}
 	}
 }
+
+// Ordinary animals become pets after two helpings of a food they like, follow
+// the player, sit on request and teleport when left behind.
+func TestPets(t *testing.T) {
+	rand.Seed(26)
+	g := &Game{Audio: &Audio{}, CraftHover: -1}
+	g.Reset()
+	p := g.Player
+	pig := NewAnimal(rl.NewVector3(p.Pos.X+2, p.Pos.Y, p.Pos.Z), AnimalPig)
+	g.Animals = append(g.Animals, pig)
+	p.Inv[Fish], p.Inv[Carrot] = 1, 2
+	p.Held = Item{ItemFood, Fish}
+	g.tamePet(pig)
+	if pig.Tamed || p.Inv[Fish] != 1 {
+		t.Fatal("a pig does not want fish")
+	}
+	p.Held = Item{ItemFood, Carrot}
+	g.tamePet(pig)
+	if pig.Tamed || p.Inv[Carrot] != 1 {
+		t.Fatal("one carrot is not enough, but it should be eaten")
+	}
+	g.tamePet(pig)
+	if !pig.Tamed || !pig.isPet() || p.Inv[Carrot] != 0 {
+		t.Fatal("two carrots should tame the pig")
+	}
+	if !g.Got[AchPet] {
+		t.Fatal("taming should unlock the achievement")
+	}
+	p.Pos.X += 10
+	g.updateAnimals(0.1)
+	if !pig.Walking || pig.Heading.X <= 0.9 {
+		t.Fatalf("pet should walk after its owner, heading %v", pig.Heading)
+	}
+	p.Pos.X += 30
+	g.updateAnimals(0.1)
+	if WrapDist(pig.Pos, p.Pos) > 3 {
+		t.Fatal("pet should teleport when left far behind")
+	}
+	p.Held = Item{Kind: ItemPickaxe}
+	g.tamePet(pig)
+	if !pig.Sitting {
+		t.Fatal("right click should make it wait")
+	}
+	p.Pos.X += 10
+	g.updateAnimals(0.1)
+	if pig.Walking {
+		t.Fatal("a waiting pet stays put")
+	}
+	// Every pet kind names at least one food that exists, and wild kinds are left alone.
+	for k, foods := range petFoods {
+		if len(foods) == 0 || petFoodList(k) == "" {
+			t.Fatalf("%s has no foods", animalKinds[k].Name)
+		}
+	}
+	croc := NewAnimal(pig.Pos, AnimalCrocodile)
+	croc.Tamed = true
+	if croc.isPet() {
+		t.Fatal("crocodiles are not pets")
+	}
+}
